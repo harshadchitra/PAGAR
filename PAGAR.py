@@ -9,12 +9,81 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 
-# ----------------- પેજ વિગતો -----------------
+# ----------------- પેજ વિગતો અને થીમ સેટઅપ -----------------
 st.set_page_config(
-    page_title="Staff Attendance & Payroll",
-    page_icon="👥",
+    page_title="Courier Solution - Payroll Pro",
+    page_icon="💼",
     layout="wide"
 )
+
+# Custom CSS for Modern UI/UX
+st.markdown("""
+<style>
+    /* Main Background & Font Styling */
+    .stApp {
+        background-color: #f4f6f9;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Header Title Design */
+    .main-title {
+        background: linear-gradient(135deg, #0e2a47 0%, #1a5276 100%);
+        color: #ffffff;
+        padding: 20px 25px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        margin-bottom: 25px;
+        text-align: center;
+    }
+    .main-title h1 {
+        margin: 0;
+        font-size: 28px;
+        font-weight: 700;
+        letter-spacing: 1px;
+    }
+    .main-title p {
+        margin: 5px 0 0 0;
+        font-size: 14px;
+        opacity: 0.85;
+    }
+
+    /* Card Box Design */
+    .metric-card {
+        background: #ffffff;
+        padding: 18px;
+        border-radius: 10px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+        border-left: 5px solid #1a5276;
+        margin-bottom: 15px;
+    }
+    
+    /* Sidebar Customization */
+    [data-testid="stSidebar"] {
+        background-color: #0e2a47;
+    }
+    [data-testid="stSidebar"] * {
+        color: #ffffff !important;
+    }
+    
+    /* Custom Buttons Styling */
+    .stButton>button {
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    /* Section Subheaders */
+    .sub-header {
+        color: #0e2a47;
+        font-size: 20px;
+        font-weight: 600;
+        border-bottom: 2px solid #e0e0e0;
+        padding-bottom: 8px;
+        margin-top: 10px;
+        margin-bottom: 20px;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ----------------- ડેટાબેઝ સેટઅપ -----------------
@@ -27,9 +96,16 @@ def init_db():
             name TEXT UNIQUE,
             designation TEXT,
             daily_rate REAL,
-            mobile TEXT
+            mobile TEXT,
+            address TEXT
         )
     """)
+    
+    try:
+        cursor.execute("ALTER TABLE staff ADD COLUMN address TEXT")
+    except sqlite3.OperationalError:
+        pass
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS attendance (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,8 +218,14 @@ def generate_salary_slip_pdf_bytes(staff_name, month_year, total_days, present_d
     return buffer.getvalue()
 
 
-# ----------------- MAIN APP UI -----------------
-st.title("👥 Staff Attendance & Salary App")
+# ----------------- MAIN HEADER UI -----------------
+st.markdown("""
+<div class="main-title">
+    <h1>💼 COURIER SOLUTION - PAYROLL PRO</h1>
+    <p>Staff Attendance, Advance & Digital Salary Management System</p>
+</div>
+""", unsafe_allow_html=True)
+
 
 menu = [
     "📅 Daily Attendance (હાજરી પૂરો)",
@@ -152,13 +234,18 @@ menu = [
     "💸 Advance Entry (ઉપાડ)",
     "👤 Manage Staff (કર્મચારી)"
 ]
-choice = st.sidebar.radio("મેનુ પસંદ કરો (Menu)", menu)
+
+st.sidebar.markdown("### 📌 Navigation Menu")
+choice = st.sidebar.radio("", menu)
 
 
 # --- 1. DAILY ATTENDANCE ---
 if choice == "📅 Daily Attendance (હાજરી પૂરો)":
-    st.subheader("📅 રોજની હાજરી પૂરો")
-    att_date = st.date_input("તારીખ પસંદ કરો", datetime.date.today())
+    st.markdown('<div class="sub-header">📅 રોજની હાજરી પૂરો</div>', unsafe_allow_html=True)
+    
+    col_d1, col_d2 = st.columns([1, 2])
+    with col_d1:
+        att_date = st.date_input("તારીખ પસંદ કરો", datetime.date.today())
 
     conn = sqlite3.connect("payroll_mobile.db")
     cursor = conn.cursor()
@@ -166,9 +253,9 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
     staff_list = [r[0] for r in cursor.fetchall()]
 
     if not staff_list:
-        st.warning("કોઈ કર્મચારી ઉમેરેલ નથી! પહેલા 'Manage Staff' માં જઈને ઉમેરો.")
+        st.warning("⚠️ કોઈ કર્મચારી ઉમેરેલ નથી! પહેલા 'Manage Staff' માં જઈને ઉમેરો.")
     else:
-        st.write("---")
+        st.write("")
         att_data = {}
         for staff in staff_list:
             cursor.execute("SELECT status FROM attendance WHERE staff_name=? AND date=?", (staff, str(att_date)))
@@ -180,13 +267,13 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
 
             col1, col2 = st.columns([2, 2])
             with col1:
-                st.write(f"👤 **{staff}**")
+                st.markdown(f"👤 **{staff}**")
             with col2:
                 status = st.selectbox(f"Status for {staff}", ["Present", "Absent", "Half"], index=default_idx, key=f"att_{staff}", label_visibility="collapsed")
                 att_data[staff] = status
 
         st.write("---")
-        if st.button("💾 Save Attendance (હાજરી સેવ કરો)", type="primary"):
+        if st.button("💾 Save Attendance (હાજરી સેવ કરો)", type="primary", use_container_width=True):
             for staff, status in att_data.items():
                 cursor.execute("""
                     INSERT INTO attendance (staff_name, date, status)
@@ -194,13 +281,14 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
                     ON CONFLICT(staff_name, date) DO UPDATE SET status=excluded.status
                 """, (staff, str(att_date), status))
             conn.commit()
-            st.success(f"તારીખ {att_date} ની હાજરી સેવ થઈ ગઈ!")
+            st.success(f"✅ તારીખ {att_date} ની હાજરી સફળતાપૂર્વક સેવ થઈ ગઈ!")
     conn.close()
 
 
 # --- 2. MONTHLY CALENDAR VIEW ---
 elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
-    st.subheader("📊 આખા મહિનાનું હાજરી કેલેન્ડર")
+    st.markdown('<div class="sub-header">📊 આખા મહિનાનું હાજરી કેલેન્ડર</div>', unsafe_allow_html=True)
+    
     col1, col2 = st.columns(2)
     with col1:
         month = st.number_input("મહિનો (1-12)", min_value=1, max_value=12, value=datetime.date.today().month)
@@ -244,13 +332,13 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
             table_rows.append(row)
 
         st.dataframe(table_rows, use_container_width=True)
-        st.info("💡 P = Present, A = Absent, H = Half Day")
+        st.info("💡 **P** = Present (હાજર), **A** = Absent (ગેરહાજર), **H** = Half Day (અડધો દિવસ)")
     conn.close()
 
 
 # --- 3. SALARY & PAID STATUS LIST ---
 elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
-    st.subheader("💰 માસિક પગાર ગણતરી, સ્લિપ & પેઇડ/પેન્ડિંગ લિસ્ટ")
+    st.markdown('<div class="sub-header">💰 માસિક પગાર ગણતરી, સ્લિપ & પેઇડ/પેન્ડિંગ લિસ્ટ</div>', unsafe_allow_html=True)
     
     conn = sqlite3.connect("payroll_mobile.db")
     cursor = conn.cursor()
@@ -258,7 +346,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
     staff_list = [r[0] for r in cursor.fetchall()]
 
     if not staff_list:
-        st.warning("કોઈ કર્મચારી ઉમેરેલ નથી!")
+        st.warning("⚠️ કોઈ કર્મચારી ઉમેરેલ નથી!")
     else:
         col_m1, col_m2 = st.columns(2)
         with col_m1:
@@ -269,7 +357,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
         month_year_str = f"{int(sel_month):02d}-{int(sel_year)}"
 
         st.write("---")
-        st.write(f"### 📋 કર્મચારીઓનું માસિક લિસ્ટ ({month_year_str})")
+        st.markdown(f"### 📋 કર્મચારીઓનું માસિક લિસ્ટ ({month_year_str})")
 
         cursor.execute("SELECT staff_name, id, net_salary, payable_days, gross_salary, advance_deduction FROM salary_history WHERE month_year=?", (month_year_str,))
         paid_records = {row[0]: {"id": row[1], "net": row[2], "days": row[3], "gross": row[4], "adv": row[5]} for row in cursor.fetchall()}
@@ -290,9 +378,9 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
             
             with col2:
                 if staff in paid_records:
-                    st.write("✅ PAID (ચૂકવાઈ ગયો)")
+                    st.markdown("🟢 **PAID (ચૂકવાઈ ગયો)**")
                 else:
-                    st.write("⏳ PENDING (બાકી છે)")
+                    st.markdown("🟠 **PENDING (બાકી છે)**")
             
             with col3:
                 if staff in paid_records:
@@ -302,7 +390,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
             
             with col4:
                 if staff in paid_records:
-                    st.write(f"{paid_records[staff]['id']}")
+                    st.write(f"#{paid_records[staff]['id']}")
                 else:
                     st.write("---")
             
@@ -347,12 +435,12 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 
         st.write("---")
 
-        st.subheader("🧮 નવો પગાર ગણો અને સ્લિપ બનાવો")
+        st.markdown('<div class="sub-header">🧮 નવો પગાર ગણો અને સ્લિપ બનાવો</div>', unsafe_allow_html=True)
         sal_staff = st.selectbox("જેનો પગાર બાકી છે તે કર્મચારી પસંદ કરો", staff_list)
 
-        if st.button("🧮 Calculate & Generate Salary Slip", type="primary"):
+        if st.button("🧮 Calculate & Generate Salary Slip", type="primary", use_container_width=True):
             if sal_staff in paid_records:
-                st.warning(f"કર્મચારી '{sal_staff}' નો પગાર આ મહિના માટે પહેલેથી ચૂકવાઈ ગયેલ છે!")
+                st.warning(f"⚠️ કર્મચારી '{sal_staff}' નો પગાર આ મહિના માટે પહેલેથી ચૂકવાઈ ગયેલ છે!")
             else:
                 cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (sal_staff,))
                 daily_rate = cursor.fetchone()[0]
@@ -381,23 +469,23 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                 """, (sal_staff, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
                 conn.commit()
-                st.success(f"'{sal_staff}' નો પગાર સફળતાપૂર્વક જમા થઈ ગયો છે! પેજ રિફ્રેશ કરો.")
+                st.success(f"✅ '{sal_staff}' નો પગાર સફળતાપૂર્વક જમા થઈ ગયો છે!")
                 st.rerun()
 
         st.write("---")
-        st.subheader("🗑️ પગાર રેકોર્ડ ડિલીટ કરો (જો ભૂલથી બન્યો હોય તો)")
+        st.markdown('<div class="sub-header">🗑️ પગાર રેકોર્ડ ડિલીટ કરો</div>', unsafe_allow_html=True)
         cursor.execute("SELECT id, staff_name, month_year, net_salary, paid_date FROM salary_history ORDER BY id DESC")
         all_history = cursor.fetchall()
 
         if all_history:
-            hist_options = {f"ID: {r[0]} | Staff: {r[1]} | Month: {r[2]} | Net: RS {r[3]}": r[0] for r in all_history}
+            hist_options = {f"ID: #{r[0]} | Staff: {r[1]} | Month: {r[2]} | Net: RS {r[3]}": r[0] for r in all_history}
             selected_hist_label = st.selectbox("ડિલીટ કરવા માટે રેકોર્ડ પસંદ કરો", list(hist_options.keys()))
             
             if st.button("🗑️ Delete Selected Salary Record", type="secondary"):
                 del_id = hist_options[selected_hist_label]
                 cursor.execute("DELETE FROM salary_history WHERE id=?", (del_id,))
                 conn.commit()
-                st.success("પગાર રેકોર્ડ સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
+                st.success("✅ પગાર રેકોર્ડ સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
                 st.rerun()
         else:
             st.info("કોઈ Paid રેકોર્ડ ઉપલબ્ધ નથી.")
@@ -407,7 +495,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 
 # --- 4. ADVANCE ENTRY ---
 elif choice == "💸 Advance Entry (ઉપાડ)":
-    st.subheader("💸 કર્મચારી ઉપાડ / એડવાન્સ એન્ટ્રી")
+    st.markdown('<div class="sub-header">💸 કર્મચારી ઉપાડ / એડવાન્સ એન્ટ્રી</div>', unsafe_allow_html=True)
     
     conn = sqlite3.connect("payroll_mobile.db")
     cursor = conn.cursor()
@@ -415,23 +503,26 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
     staff_list = [r[0] for r in cursor.fetchall()]
 
     if not staff_list:
-        st.warning("કોઈ કર્મચારી ઉમેરેલ નથી!")
+        st.warning("⚠️ કોઈ કર્મચારી ઉમેરેલ નથી!")
     else:
-        adv_staff = st.selectbox("કર્મચારી", staff_list)
-        adv_date = st.date_input("તારીખ", datetime.date.today())
-        adv_amt = st.number_input("ઉપાડ રકમ (RS)", min_value=0.0, step=100.0)
-        adv_note = st.text_input("નોંધ (Note)")
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            adv_staff = st.selectbox("કર્મચારી પસંદ કરો", staff_list)
+            adv_amt = st.number_input("ઉપાડ રકમ (RS)", min_value=0.0, step=100.0)
+        with col_a2:
+            adv_date = st.date_input("તારીખ", datetime.date.today())
+            adv_note = st.text_input("નોંધ (Note)")
 
-        if st.button("💾 Save Advance Payment", type="primary"):
+        if st.button("💾 Save Advance Payment", type="primary", use_container_width=True):
             if adv_amt > 0:
                 cursor.execute("INSERT INTO advance_payments (staff_name, date, amount, note) VALUES (?, ?, ?, ?)", (adv_staff, str(adv_date), adv_amt, adv_note))
                 conn.commit()
-                st.success(f"RS {adv_amt}/- નો ઉપાડ જમા થઈ ગયો!")
+                st.success(f"✅ RS {adv_amt}/- નો ઉપાડ સફળતાપૂર્વક જમા થઈ ગયો!")
             else:
-                st.error("સાચી રકમ નાખો!")
+                st.error("⚠️ કૃપા કરીને સાચી રકમ નાખો!")
 
         st.write("---")
-        st.subheader("📜 ઉપાડ રેકોર્ડ લિસ્ટ")
+        st.markdown("### 📜 ઉપાડ રેકોર્ડ હિસ્ટ્રી")
         cursor.execute("SELECT id, staff_name, date, amount, note FROM advance_payments ORDER BY id DESC")
         adv_rows = cursor.fetchall()
         if adv_rows:
@@ -441,7 +532,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 
 # --- 5. MANAGE STAFF ---
 elif choice == "👤 Manage Staff (કર્મચારી)":
-    st.subheader("👤 નવો કર્મચારી ઉમેરો")
+    st.markdown('<div class="sub-header">👤 નવો કર્મચારી ઉમેરો</div>', unsafe_allow_html=True)
     
     conn = sqlite3.connect("payroll_mobile.db")
     cursor = conn.cursor()
@@ -450,24 +541,25 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
     with col1:
         s_name = st.text_input("કર્મચારીનું નામ")
         s_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, step=50.0)
+        s_address = st.text_area("સરનામું (Address)", height=80)
     with col2:
         s_desig = st.text_input("હોદ્દો (Designation)")
         s_mob = st.text_input("મોબાઈલ નંબર")
 
-    if st.button("💾 Save Staff", type="primary"):
+    if st.button("💾 Save Staff", type="primary", use_container_width=True):
         if s_name and s_rate > 0:
             try:
-                cursor.execute("INSERT INTO staff (name, designation, daily_rate, mobile) VALUES (?, ?, ?, ?)", (s_name, s_desig, s_rate, s_mob))
+                cursor.execute("INSERT INTO staff (name, designation, daily_rate, mobile, address) VALUES (?, ?, ?, ?, ?)", (s_name, s_desig, s_rate, s_mob, s_address))
                 conn.commit()
-                st.success(f"કર્મચારી '{s_name}' સેવ થઈ ગયો!")
+                st.success(f"✅ કર્મચારી '{s_name}' સફળતાપૂર્વક સેવ થઈ ગયો!")
                 st.rerun()
             except sqlite3.IntegrityError:
-                st.error("આ નામનો કર્મચારી પહેલેથી છે!")
+                st.error("⚠️ આ નામનો કર્મચારી પહેલેથી જ ડેટાબેઝમાં છે!")
         else:
-            st.error("નામ અને રોજ ભરો!")
+            st.error("⚠️ કૃપા કરીને નામ અને રોજ ભરો!")
 
     st.write("---")
-    st.subheader("🗑️ કર્મચારીને લિસ્ટમાંથી દૂર / ડિલીટ કરો")
+    st.markdown('<div class="sub-header">🗑️ કર્મચારીને લિસ્ટમાંથી દૂર / ડિલીટ કરો</div>', unsafe_allow_html=True)
     
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     all_staff_to_del = [r[0] for r in cursor.fetchall()]
@@ -477,14 +569,14 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
         if st.button("🗑️ Delete Staff (કર્મચારી કાઢી નાખો)", type="secondary"):
             cursor.execute("DELETE FROM staff WHERE name=?", (del_staff_name,))
             conn.commit()
-            st.success(f"કર્મચારી '{del_staff_name}' સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
+            st.success(f"✅ કર્મચારી '{del_staff_name}' સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
             st.rerun()
     else:
         st.info("ડિલીટ કરવા માટે કોઈ કર્મચારી ઉપલબ્ધ નથી.")
 
     st.write("---")
-    st.subheader("📋 હાલના કર્મચારીઓનું લિસ્ટ")
-    cursor.execute("SELECT id, name, designation, daily_rate, mobile FROM staff ORDER BY name ASC")
+    st.markdown("### 📋 હાલના કર્મચારીઓનું લિસ્ટ (સંપૂર્ણ વિગત)")
+    cursor.execute("SELECT id, name, designation, daily_rate, mobile, address FROM staff ORDER BY name ASC")
     staff_rows = cursor.fetchall()
     if staff_rows:
         st.dataframe(staff_rows, use_container_width=True)
