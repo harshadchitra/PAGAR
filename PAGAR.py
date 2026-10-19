@@ -179,11 +179,8 @@ def init_db():
 init_db()
 
 
-# ----------------- DIGITAL SALARY SLIP PDF -----------------
-def generate_salary_slip_pdf_bytes(staff_name, month_year, total_days, present_days, half_days, absent_days, daily_rate, gross_salary, advance_deduction, net_salary, total_overtime=0.0):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
+# ----------------- DIGITAL SALARY SLIP PDF (SINGLE & MULTI) -----------------
+def generate_single_salary_slip_story(story, staff_name, month_year, total_days, present_days, half_days, absent_days, daily_rate, gross_salary, advance_deduction, net_salary, total_overtime=0.0):
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#0f172a'), alignment=1, spaceAfter=2)
@@ -241,7 +238,7 @@ def generate_salary_slip_pdf_bytes(staff_name, month_year, total_days, present_d
         ('PADDING', (0,0), (-1,-1), 8),
     ]))
     story.append(t_sal)
-    story.append(Spacer(1, 40))
+    story.append(Spacer(1, 30))
 
     data_sign = [
         [Paragraph("<b>Employee Signature</b>", normal_style), Paragraph("<b>Authorized Signatory</b>", ParagraphStyle('R', parent=normal_style, alignment=2))]
@@ -249,6 +246,12 @@ def generate_salary_slip_pdf_bytes(staff_name, month_year, total_days, present_d
     t_sign = Table(data_sign, colWidths=[250, 250])
     story.append(t_sign)
 
+
+def generate_salary_slip_pdf_bytes(staff_name, month_year, total_days, present_days, half_days, absent_days, daily_rate, gross_salary, advance_deduction, net_salary, total_overtime=0.0):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    generate_single_salary_slip_story(story, staff_name, month_year, total_days, present_days, half_days, absent_days, daily_rate, gross_salary, advance_deduction, net_salary, total_overtime)
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
@@ -269,7 +272,6 @@ def generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_of
     story.append(Paragraph("COURIER SOLUTION - MONTHLY MASTER REPORT", title_style))
     story.append(Paragraph(f"Summary Statement for Period: {month_year_str}", sub_style))
 
-    # Summary Table
     data_summary = [
         [Paragraph("<b>Category Summary</b>", normal_style), Paragraph("<b>Amount (RS)</b>", normal_style)],
         [Paragraph("Total Paid Salary", normal_style), Paragraph(f"RS {total_paid_salary:,.2f}", normal_style)],
@@ -287,7 +289,6 @@ def generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_of
     story.append(t_sum)
     story.append(Spacer(1, 15))
 
-    # Expenses Breakup Header
     story.append(Paragraph("Daily Expenses Breakup", head_style))
     exp_table_data = [[Paragraph("<b>Date</b>", normal_style), Paragraph("<b>Category</b>", normal_style), Paragraph("<b>Amount</b>", normal_style), Paragraph("<b>Details</b>", normal_style)]]
     for r in exp_records:
@@ -303,7 +304,6 @@ def generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_of
     story.append(t_exp)
     story.append(Spacer(1, 15))
 
-    # Paid Salaries Header
     story.append(Paragraph("Paid Salaries Statement", head_style))
     sal_table_data = [[Paragraph("<b>Staff Name</b>", normal_style), Paragraph("<b>Days</b>", normal_style), Paragraph("<b>Gross</b>", normal_style), Paragraph("<b>Advance</b>", normal_style), Paragraph("<b>Net Paid</b>", normal_style)]]
     for s in sal_records:
@@ -548,7 +548,60 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     st.write("---")
 
         st.write("---")
+        
+        # --- BULK SLIP DOWNLOAD SECTION ---
+        st.markdown('<div class="section-title">📥 બધી જ પેઇડ સ્લિપ એકસાથે ડાઉનલોડ કરો (All Paid Slips PDF)</div>', unsafe_allow_html=True)
+        if paid_records:
+            if st.button("🚀 Generate All Paid Staff Slips (બધી સ્લિપ ડાઉનલોડ કરો)", type="primary"):
+                buffer_all = io.BytesIO()
+                doc_all = SimpleDocTemplate(buffer_all, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+                story_all = []
+                
+                max_days = calendar.monthrange(int(sel_year), int(sel_month))[1]
+                start_date = f"{sel_year}-{int(sel_month):02d}-01"
+                end_date = f"{sel_year}-{int(sel_month):02d}-{max_days}"
 
+                for staff, p_info in paid_records.items():
+                    cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (staff,))
+                    d_rate_res = cursor.fetchone()
+                    daily_rate = d_rate_res[0] if d_rate_res else 0.0
+
+                    cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (staff, start_date, end_date))
+                    att_rows = cursor.fetchall()
+                    present_count = sum(1 for r in att_rows if r[0] == "Present")
+                    half_count = sum(1 for r in att_rows if r[0] == "Half")
+                    absent_count = sum(1 for r in att_rows if r[0] == "Absent")
+                    tot_ot = sum(r[1] for r in att_rows if r[1])
+
+                    generate_single_salary_slip_story(
+                        story_all,
+                        staff_name=staff,
+                        month_year=month_year_str,
+                        total_days=max_days,
+                        present_days=present_count,
+                        half_days=half_count,
+                        absent_days=absent_count,
+                        daily_rate=daily_rate,
+                        gross_salary=p_info['gross'],
+                        advance_deduction=p_info['adv'],
+                        net_salary=p_info['net'],
+                        total_overtime=tot_ot
+                    )
+                    story_all.append(Spacer(1, 20)) # Page break gap or space between slips
+
+                doc_all.build(story_all)
+                buffer_all.seek(0)
+
+                st.download_button(
+                    label="📥 Download Combined All Slips PDF",
+                    data=buffer_all.getvalue(),
+                    file_name=f"All_Staff_Salary_Slips_{month_year_str}.pdf",
+                    mime="application/pdf"
+                )
+        else:
+            st.info("આ મહિના માટે હજુ કોઈ કર્મચારીનો પગાર ચૂકવાયેલ (PAID) નથી.")
+
+        st.write("---")
         st.markdown('<div class="section-title">🧮 નવો પગાર ગણો અને સ્લિપ બનાવો</div>', unsafe_allow_html=True)
         sal_staff = st.selectbox("જેનો પગાર બાકી છે તે કર્મચારી પસંદ કરો", staff_list)
 
@@ -741,17 +794,14 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     conn = sqlite3.connect("payroll_mobile.db")
     cursor = conn.cursor()
 
-    # 1. Total Paid Salary Calculation
     cursor.execute("SELECT SUM(net_salary) FROM salary_history WHERE month_year=?", (month_year_str,))
     tot_sal_row = cursor.fetchone()
     total_paid_salary = tot_sal_row[0] if tot_sal_row[0] else 0.0
 
-    # 2. Total Daily Office Expenses Calculation
     cursor.execute("SELECT SUM(amount) FROM expenses WHERE date BETWEEN ? AND ?", (start_date, end_date))
     tot_exp_row = cursor.fetchone()
     total_office_expenses = tot_exp_row[0] if tot_exp_row[0] else 0.0
 
-    # 3. Overall Total Expense
     grand_total = total_paid_salary + total_office_expenses
 
     st.write("---")
@@ -765,7 +815,6 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     with col_s3:
         st.metric(label="💼 આખા મહિનાનો કુલ ખર્ચ (GRAND TOTAL)", value=f"RS {grand_total:,.2f}")
 
-    # Fetch records for tables & PDF
     cursor.execute("SELECT date, category, amount, details FROM expenses WHERE date BETWEEN ? AND ? ORDER BY date ASC", (start_date, end_date))
     exp_records = cursor.fetchall()
 
@@ -773,7 +822,6 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     sal_records = cursor.fetchall()
 
     st.write("---")
-    # Master Report PDF Download Button
     master_pdf_bytes = generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_office_expenses, grand_total, exp_records, sal_records)
     st.download_button(
         label="📥 Download Master Report PDF (પ્રિન્ટ / PDF)",
