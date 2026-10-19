@@ -587,7 +587,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                         net_salary=p_info['net'],
                         total_overtime=tot_ot
                     )
-                    story_all.append(Spacer(1, 20)) # Page break gap or space between slips
+                    story_all.append(Spacer(1, 20))
 
                 doc_all.build(story_all)
                 buffer_all.seek(0)
@@ -603,42 +603,81 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 
         st.write("---")
         st.markdown('<div class="section-title">🧮 નવો પગાર ગણો અને સ્લિપ બનાવો</div>', unsafe_allow_html=True)
-        sal_staff = st.selectbox("જેનો પગાર બાકી છે તે કર્મચારી પસંદ કરો", staff_list)
+        
+        # 📌 ALL STAFF OPTION ADDED HERE IN DROPDOWN
+        select_options = ["🌐 All Staff (બધા કર્મચારીઓ એકસાથે)"] + staff_list
+        sal_staff_choice = st.selectbox("જેનો પગાર બાકી છે તે કર્મચારી પસંદ કરો", select_options)
 
         if st.button("🧮 Calculate & Generate Salary Slip", type="primary", use_container_width=True):
-            if sal_staff in paid_records:
-                st.warning(f"⚠️ કર્મચારી '{sal_staff}' નો પગાર આ મહિના માટે પહેલેથી ચૂકવાઈ ગયેલ છે!")
-            else:
-                cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (sal_staff,))
-                daily_rate = cursor.fetchone()[0]
+            max_days = calendar.monthrange(int(sel_year), int(sel_month))[1]
+            start_date = f"{sel_year}-{int(sel_month):02d}-01"
+            end_date = f"{sel_year}-{int(sel_month):02d}-{max_days}"
+            paid_date_str = datetime.date.today().strftime("%Y-%m-%d")
 
-                max_days = calendar.monthrange(int(sel_year), int(sel_month))[1]
-                start_date = f"{sel_year}-{int(sel_month):02d}-01"
-                end_date = f"{sel_year}-{int(sel_month):02d}-{max_days}"
+            # 🌐 ALL STAFF BULK CALCULATION
+            if sal_staff_choice == "🌐 All Staff (બધા કર્મચારીઓ એકસાથે)":
+                calculated_count = 0
+                for s_item in staff_list:
+                    if s_item not in paid_records:
+                        cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (s_item,))
+                        daily_rate = cursor.fetchone()[0]
 
-                cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff, start_date, end_date))
-                att_rows = cursor.fetchall()
-                present_count = sum(1 for r in att_rows if r[0] == "Present")
-                half_count = sum(1 for r in att_rows if r[0] == "Half")
-                absent_count = sum(1 for r in att_rows if r[0] == "Absent")
-                tot_ot = sum(r[1] for r in att_rows if r[1])
+                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (s_item, start_date, end_date))
+                        att_rows = cursor.fetchall()
+                        present_count = sum(1 for r in att_rows if r[0] == "Present")
+                        half_count = sum(1 for r in att_rows if r[0] == "Half")
+                        tot_ot = sum(r[1] for r in att_rows if r[1])
 
-                cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff, start_date, end_date))
-                adv_row = cursor.fetchone()
-                adv_amt = adv_row[0] if adv_row[0] else 0.0
+                        cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=? AND date BETWEEN ? AND ?", (s_item, start_date, end_date))
+                        adv_row = cursor.fetchone()
+                        adv_amt = adv_row[0] if adv_row[0] else 0.0
 
-                payable_days = present_count + (half_count * 0.5)
-                gross_salary = (payable_days * daily_rate) + tot_ot
-                net_salary = max(0.0, gross_salary - adv_amt)
+                        payable_days = present_count + (half_count * 0.5)
+                        gross_salary = (payable_days * daily_rate) + tot_ot
+                        net_salary = max(0.0, gross_salary - adv_amt)
 
-                paid_date_str = datetime.date.today().strftime("%Y-%m-%d")
-                cursor.execute("""
-                    INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, (sal_staff, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
+                        cursor.execute("""
+                            INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (s_item, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
+                        calculated_count += 1
+                
                 conn.commit()
-                st.success(f"✅ '{sal_staff}' નો પગાર સફળતાપૂર્વક જમા થઈ ગયો છે!")
-                st.rerun()
+                if calculated_count > 0:
+                    st.success(f"✅ કુલ {calculated_count} કર્મચારીઓનો પગાર એકસાથે સફળતાપૂર્વક કેલ્ક્યુલેટ થઈ ગયો છે!")
+                    st.rerun()
+                else:
+                    st.info("બધા કર્મચારીઓનો પગાર પહેલેથી જ ચૂકવાઈ ગયેલ છે!")
+
+            # INDIVIDUAL SINGLE STAFF CALCULATION
+            else:
+                if sal_staff_choice in paid_records:
+                    st.warning(f"⚠️ કર્મચારી '{sal_staff_choice}' નો પગાર આ મહિના માટે પહેલેથી ચૂકવાઈ ગયેલ છે!")
+                else:
+                    cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (sal_staff_choice,))
+                    daily_rate = cursor.fetchone()[0]
+
+                    cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff_choice, start_date, end_date))
+                    att_rows = cursor.fetchall()
+                    present_count = sum(1 for r in att_rows if r[0] == "Present")
+                    half_count = sum(1 for r in att_rows if r[0] == "Half")
+                    tot_ot = sum(r[1] for r in att_rows if r[1])
+
+                    cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff_choice, start_date, end_date))
+                    adv_row = cursor.fetchone()
+                    adv_amt = adv_row[0] if adv_row[0] else 0.0
+
+                    payable_days = present_count + (half_count * 0.5)
+                    gross_salary = (payable_days * daily_rate) + tot_ot
+                    net_salary = max(0.0, gross_salary - adv_amt)
+
+                    cursor.execute("""
+                        INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (sal_staff_choice, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
+                    conn.commit()
+                    st.success(f"✅ '{sal_staff_choice}' નો પગાર સફળતાપૂર્વક જમા થઈ ગયો છે!")
+                    st.rerun()
 
         st.write("---")
         st.markdown('<div class="section-title">🗑️ પગાર રેકોર્ડ ડિલીટ કરો</div>', unsafe_allow_html=True)
