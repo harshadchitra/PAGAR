@@ -3,4 +3,3 @@ pandas
 openpyxl
 xlsxwriter
 reportlab
-psycopg2-binary
