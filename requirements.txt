@@ -1,4 +1,4 @@
-reportlab
-pdf2image
 streamlit
-pillow
+psycopg2-binary
+reportlab
+pandas
