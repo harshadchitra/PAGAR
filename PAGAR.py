@@ -69,6 +69,10 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #cbd5e1 !important;
     }
+    /* Textarea & Text Input Font Color Fix */
+    textarea, input {
+        color: #0f172a !important;
+    }
     .stButton>button {
         background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
         color: white;
@@ -86,16 +90,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- ડેટાબેઝ કનેક્શન અને સ્પીડ ઓપ્ટિમાઇઝેશન -----------------
+# ----------------- ડેટાબેઝ કનેક્શન અને ઓટો-અપગ્રેડ -----------------
 LOCAL_DB = "payroll_mobile.db"
 
-@st.cache_resource
 def get_local_connection():
     conn = sqlite3.connect(LOCAL_DB, check_same_thread=False)
     return conn
 
 def get_db_connection():
-    # જો Supabase (Postgres) સીક્રેટ્સ ઉપલબ્ધ હોય તો વાપરો, નહિતર લોકલ SQLite
     try:
         if "postgres" in st.secrets:
             db_url = st.secrets["postgres"]["url"]
@@ -176,6 +178,13 @@ def init_db():
                 shift_timing TEXT
             )
         """)
+        # Missing columns auto-add check for existing SQLite staff DB
+        for col_def in ["designation TEXT", "daily_rate REAL", "mobile TEXT", "address TEXT", "work_type TEXT", "shift_timing TEXT"]:
+            try:
+                cursor.execute(f"ALTER TABLE staff ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS attendance (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -186,6 +195,13 @@ def init_db():
                 UNIQUE(staff_name, date)
             )
         """)
+        # Missing columns auto-add check for existing SQLite attendance DB
+        for col_def in ["status TEXT", "overtime_amt REAL DEFAULT 0.0"]:
+            try:
+                cursor.execute(f"ALTER TABLE attendance ADD COLUMN {col_def}")
+            except sqlite3.OperationalError:
+                pass
+
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS advance_payments (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -221,8 +237,7 @@ def init_db():
     
     conn.commit()
     cursor.close()
-    if db_type == "sqlite":
-        conn.close()
+    conn.close()
 
 init_db()
 
@@ -444,12 +459,11 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
                     """, (staff, str(att_date), status, ot_amt))
             conn.commit()
             cursor.close()
-            if db_type == "sqlite":
-                conn.close()
-            st.success(f"✅ તારીખ {att_date} ની હાજરી અને ઓવર ટાઈમ સફળતાપૂર્વક સેવ થઈ ગયા!")
+            conn.close()
+            st.success(f"✅ તારીખ {att_date} ની હાજરી અને ઓવર ટાઈમ સફળતાપૂર્વਕ સેવ થઈ ગયા!")
             st.rerun()
-    if db_type == "sqlite":
-        conn.close()
+    cursor.close()
+    conn.close()
 
 # --- 2. MONTHLY CALENDAR VIEW ---
 elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
@@ -504,8 +518,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
         st.dataframe(table_rows, use_container_width=True)
         st.info("💡 **P** = Present (હાજર), **A** = Absent (ગેરહાજર), **H** = Half Day (અડધો દિવસ)")
     cursor.close()
-    if db_type == "sqlite":
-        conn.close()
+    conn.close()
 
 # --- 3. SALARY & PAID STATUS LIST ---
 elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
@@ -666,8 +679,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                 
                 conn.commit()
                 cursor.close()
-                if db_type == "sqlite":
-                    conn.close()
+                conn.close()
                 if calculated_count > 0:
                     st.success(f"✅ કુલ {calculated_count} કર્મચારીઓનો પગાર એકસાથે સફળતાપૂર્વક કેલ્ક્યુલેટ થઈ ગયો!")
                     st.rerun()
@@ -716,8 +728,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                         """, (sal_staff_choice, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
                     conn.commit()
                     cursor.close()
-                    if db_type == "sqlite":
-                        conn.close()
+                    conn.close()
                     st.success(f"✅ '{sal_staff_choice}' નો પગાર સફળતાપૂર્વક જમા થઈ ગયો!")
                     st.rerun()
 
@@ -740,15 +751,13 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     cursor.execute("DELETE FROM salary_history WHERE id=?", (del_id,))
                 conn.commit()
                 cursor.close()
-                if db_type == "sqlite":
-                    conn.close()
+                conn.close()
                 st.success("✅ પગાર રેકોર્ડ સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
                 st.rerun()
         else:
             st.info("કોઈ Paid રેકોર્ડ ઉપલબ્ધ નથી.")
         cursor.close()
-        if db_type == "sqlite":
-            conn.close()
+        conn.close()
 
 # --- 4. ADVANCE ENTRY ---
 elif choice == "💸 Advance Entry (ઉપાડ)":
@@ -778,8 +787,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
                     cursor.execute("INSERT INTO advance_payments (staff_name, date, amount, note) VALUES (?, ?, ?, ?)", (adv_staff, str(adv_date), adv_amt, adv_note))
                 conn.commit()
                 cursor.close()
-                if db_type == "sqlite":
-                    conn.close()
+                conn.close()
                 st.success(f"✅ RS {adv_amt}/- નો ઉપાડ સફળતાપૂર્વક જમા થઈ ગયો!")
                 st.rerun()
             else:
@@ -794,8 +802,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
         if adv_rows:
             st.dataframe(adv_rows, use_container_width=True)
         cursor.close()
-        if db_type == "sqlite":
-            conn.close()
+        conn.close()
 
 # --- 5. DAILY EXPENSES ---
 elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
@@ -829,8 +836,7 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
                 cursor.execute("INSERT INTO expenses (date, category, amount, details, bill_file) VALUES (?, ?, ?, ?, ?)", (str(exp_date), exp_cat, exp_amt, exp_detail, saved_filename))
             conn.commit()
             cursor.close()
-            if db_type == "sqlite":
-                conn.close()
+            conn.close()
             st.success(f"✅ RS {exp_amt}/- નો '{exp_cat}' સફળતાપૂર્વક બિલ સાથે સેવ થઈ ગયો!")
             st.rerun()
         else:
@@ -882,13 +888,11 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
                 cursor.execute("DELETE FROM expenses WHERE id=?", (del_exp_id,))
             conn.commit()
             cursor.close()
-            if db_type == "sqlite":
-                conn.close()
+            conn.close()
             st.success("✅ ખર્ચ એન્ટ્રી ડિલીટ થઈ ગઈ!")
             st.rerun()
     cursor.close()
-    if db_type == "sqlite":
-        conn.close()
+    conn.close()
 
 # --- 6. MASTER REPORT ---
 elif choice == "📊 Master Report (માસિક માસ્ટર રિપોર્ટ)":
@@ -947,8 +951,7 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
         cursor.execute("SELECT staff_name, payable_days, gross_salary, advance_deduction, net_salary, paid_date FROM salary_history WHERE month_year=?", (month_year_str,))
     sal_records = cursor.fetchall()
     cursor.close()
-    if db_type == "sqlite":
-        conn.close()
+    conn.close()
 
     st.write("---")
     master_pdf_bytes = generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_office_expenses, grand_total, exp_records, sal_records)
@@ -977,89 +980,122 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
 
 # --- 7. MANAGE STAFF ---
 elif choice == "👤 Manage Staff (કર્મચારી)":
-    st.markdown('<div class="section-title">👤 નવો કર્મચારી ઉમેરો (વિગતવાર)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">👤 કર્મચારી મેનેજમેન્ટ (નવો ઉમેરો, એડિટ કરો અને લિસ્ટ)</div>', unsafe_allow_html=True)
     
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        s_name = st.text_input("કર્મચારીનું નામ")
-        s_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, step=50.0)
-        s_work_type = st.selectbox("કામનો પ્રકાર (Work Type)", ["Full Time", "Part Time"])
-        s_address = st.text_area("સરનામું (Address)", height=80)
-    with col2:
-        s_desig = st.text_input("હોદ્દો (Designation)")
-        s_mob = st.text_input("મોબાઈલ નંબર")
-        s_shift = st.text_input("Shift Timing (ઉદા. 09:00 AM to 06:00 PM)")
+    # Tabs for Add New vs Edit Existing
+    staff_tab1, staff_tab2 = st.tabs(["➕ નવો કર્મચારી ઉમેરો", "✏️ કર્મચારી વિગત એડિટ / સુધારો કરો"])
 
-    if st.button("💾 Save Staff", type="primary", use_container_width=True):
-        if s_name and s_rate > 0:
-            try:
-                if db_type == "postgres":
-                    cursor.execute("""
-                        INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
-                else:
-                    cursor.execute("""
-                        INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
-                conn.commit()
-                cursor.close()
-                if db_type == "sqlite":
+    with staff_tab1:
+        col1, col2 = st.columns(2)
+        with col1:
+            s_name = st.text_input("કર્મચારીનું નામ", key="add_name")
+            s_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, step=50.0, key="add_rate")
+            s_work_type = st.selectbox("કામનો પ્રકાર (Work Type)", ["Full Time", "Part Time"], key="add_wtype")
+            s_address = st.text_area("સરનામું (Address)", height=80, key="add_addr")
+        with col2:
+            s_desig = st.text_input("હોદ્દો (Designation)", key="add_desig")
+            s_mob = st.text_input("મોબાઈલ નંબર", key="add_mob")
+            s_shift = st.text_input("Shift Timing (ઉદા. 09:00 AM to 06:00 PM)", key="add_shift")
+
+        if st.button("💾 Save Staff", type="primary", use_container_width=True):
+            if s_name and s_rate > 0:
+                try:
+                    if db_type == "postgres":
+                        cursor.execute("""
+                            INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
+                    else:
+                        cursor.execute("""
+                            INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
+                    conn.commit()
+                    cursor.close()
                     conn.close()
-                st.success(f"✅ કર્મચારી '{s_name}' સફળતાપૂર્વક સેવ થઈ ગયો!")
-                st.rerun()
-            except Exception:
-                cursor.close()
-                if db_type == "sqlite":
+                    st.success(f"✅ કર્મચારી '{s_name}' સફળતાપૂર્વક સેવ થઈ ગયો!")
+                    st.rerun()
+                except Exception:
+                    cursor.close()
                     conn.close()
-                st.error("⚠️ આ નામનો કર્મચારી પહેલેથી જ ડેટાબેઝમાં છે!")
-        else:
-            cursor.close()
-            if db_type == "sqlite":
+                    st.error("⚠️ આ નામનો કર્મચારી પહેલેથી જ ડેટાબેઝમાં છે!")
+            else:
+                cursor.close()
                 conn.close()
-            st.error("⚠️ કૃપા કરીને નામ અને રોજ ભરો!")
+                st.error("⚠️ કૃપા કરીને નામ અને રોજ ભરો!")
+
+    with staff_tab2:
+        cursor.execute("SELECT id, name, designation, work_type, shift_timing, daily_rate, mobile, address FROM staff ORDER BY name ASC")
+        staff_rows_all = cursor.fetchall()
+
+        if staff_rows_all:
+            staff_names_list = [r[1] for r in staff_rows_all]
+            edit_staff_choice = st.selectbox("એડિટ કરવા માટે કર્મચારી પસંદ કરો", staff_names_list, key="edit_sel_staff")
+
+            # Get selected staff current details
+            cursor.execute("SELECT id, name, designation, daily_rate, mobile, address, work_type, shift_timing FROM staff WHERE name=?", (edit_staff_choice,))
+            curr_data = cursor.fetchone()
+
+            if curr_data:
+                s_id, c_name, c_desig, c_rate, c_mob, c_addr, c_wtype, c_shift = curr_data
+                
+                with st.form("edit_staff_form"):
+                    st.markdown(f"**કર્મચારી ID: #{s_id}**")
+                    e_name = st.text_input("કર્મચારીનું નામ", value=c_name)
+                    e_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, value=float(c_rate) if c_rate else 0.0, step=50.0)
+                    e_wtype = st.selectbox("કામનો પ્રકાર (Work Type)", ["Full Time", "Part Time"], index=0 if c_wtype != "Part Time" else 1)
+                    e_addr = st.text_area("સરનામું (Address)", value=c_addr if c_addr else "", height=80)
+                    
+                    e_desig = st.text_input("હોદ્દો (Designation)", value=c_desig if c_desig else "")
+                    e_mob = st.text_input("મોબાઈલ નંબર", value=c_mob if c_mob else "")
+                    e_shift = st.text_input("Shift Timing", value=c_shift if c_shift else "")
+
+                    submit_update = st.form_submit_button("🔄 Update Staff Details (વિગત અપડેટ કરો)", type="primary")
+
+                    if submit_update:
+                        if db_type == "postgres":
+                            cursor.execute("""
+                                UPDATE staff SET name=%s, designation=%s, daily_rate=%s, mobile=%s, address=%s, work_type=%s, shift_timing=%s WHERE id=%s
+                            """, (e_name, e_desig, e_rate, e_mob, e_addr, e_wtype, e_shift, s_id))
+                        else:
+                            cursor.execute("""
+                                UPDATE staff SET name=?, designation=?, daily_rate=?, mobile=?, address=?, work_type=?, shift_timing=? WHERE id=?
+                            """, (e_name, e_desig, e_rate, e_mob, e_addr, e_wtype, e_shift, s_id))
+                        conn.commit()
+                        st.success(f"✅ કર્મચારી '{e_name}' ની વિગતો સફળતાપૂર્વક અપડેટ થઈ ગઈ!")
+                        st.rerun()
+        else:
+            st.info("એડિટ કરવા માટે કોઈ કર્મચારી ઉપલબ્ધ નથી.")
 
     st.write("---")
     st.markdown('<div class="section-title">🗑️ કર્મચારીને લિસ્ટમાંથી દૂર / ડિલીટ કરો</div>', unsafe_allow_html=True)
     
-    conn, db_type = get_db_connection()
-    cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     all_staff_to_del = [r[0] for r in cursor.fetchall()]
 
     if all_staff_to_del:
-        del_staff_name = st.selectbox("છૂટા થયેલા / ડિલીટ કરવા માટે કર્મચારી પસંદ કરો", all_staff_to_del)
+        del_staff_name = st.selectbox("છૂટા થયેલા / ડિલીટ કરવા માટે કર્મચારી પસંદ કરો", all_staff_to_del, key="del_sel_staff")
         if st.button("🗑️ Delete Staff (કર્મચારી કાઢી નાખો)", type="secondary"):
             if db_type == "postgres":
                 cursor.execute("DELETE FROM staff WHERE name=%s", (del_staff_name,))
             else:
                 cursor.execute("DELETE FROM staff WHERE name=?", (del_staff_name,))
             conn.commit()
-            cursor.close()
-            if db_type == "sqlite":
-                conn.close()
-
             st.success(f"✅ કર્મચારી '{del_staff_name}' સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
             st.rerun()
     else:
-        cursor.close()
-        if db_type == "sqlite":
-            conn.close()
         st.info("ડિલીટ કરવા માટે કોઈ કર્મચારી ઉપલબ્ધ નથી.")
 
     st.write("---")
-    st.markdown("### 📋 હાલના કર્મચારીઓનું લિસ્ટ (સંપૂર્ણ વિગત)")
-    conn, db_type = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, designation, work_type, shift_timing, daily_rate, mobile, address FROM staff ORDER BY name ASC")
+    st.markdown("### 📋 હાલના કર્મચારીઓનું લિસ્ટ (ક્રમ અને સંપૂર્ણ વિગત)")
+    cursor.execute("SELECT id, name, designation, work_type, shift_timing, daily_rate, mobile, address FROM staff ORDER BY id ASC")
     staff_rows = cursor.fetchall()
     if staff_rows:
         st.dataframe(staff_rows, use_container_width=True)
+    
     cursor.close()
-    if db_type == "sqlite":
-        conn.close()
+    conn.close()
 
