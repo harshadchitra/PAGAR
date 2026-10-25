@@ -1,10 +1,10 @@
 import streamlit as st
-import sqlite3
 import psycopg2
 import datetime
 import calendar
 import io
 import os
+import pandas as pd
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
@@ -89,14 +89,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- ડેટાબેઝ કનેક્શન (Absolute Path Fix) -----------------
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOCAL_DB = os.path.join(BASE_DIR, "payroll_mobile.db")
-
-def get_local_connection():
-    conn = sqlite3.connect(LOCAL_DB, check_same_thread=False)
-    return conn
-
+# ----------------- ડેટાબેઝ કનેક્શન (માત્ર Supabase ઓનલાઈન) -----------------
 def get_db_connection():
     try:
         if "postgres" in st.secrets:
@@ -104,134 +97,69 @@ def get_db_connection():
             return psycopg2.connect(db_url), "postgres"
     except Exception:
         pass
-    return get_local_connection(), "sqlite"
+    
+    # ફોલબેક Supabase Direct Connection URL
+    fallback_url = "postgresql://postgres:804032%40Chitra@db.ejmbyqmvshipsdpithjzm.supabase.co:5432/postgres"
+    return psycopg2.connect(fallback_url), "postgres"
 
 def init_db():
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
     
-    if db_type == "postgres":
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS staff (
-                id SERIAL PRIMARY KEY,
-                name TEXT UNIQUE,
-                designation TEXT,
-                daily_rate REAL,
-                mobile TEXT,
-                address TEXT,
-                work_type TEXT,
-                shift_timing TEXT
-            );
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS attendance (
-                id SERIAL PRIMARY KEY,
-                staff_name TEXT,
-                date TEXT,
-                status TEXT,
-                overtime_amt REAL DEFAULT 0.0,
-                UNIQUE(staff_name, date)
-            );
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS advance_payments (
-                id SERIAL PRIMARY KEY,
-                staff_name TEXT,
-                date TEXT,
-                amount REAL,
-                note TEXT
-            );
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS salary_history (
-                id SERIAL PRIMARY KEY,
-                staff_name TEXT,
-                month_year TEXT,
-                payable_days REAL,
-                gross_salary REAL,
-                advance_deduction REAL,
-                net_salary REAL,
-                paid_date TEXT,
-                UNIQUE(staff_name, month_year)
-            );
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS expenses (
-                id SERIAL PRIMARY KEY,
-                date TEXT,
-                category TEXT,
-                amount REAL,
-                details TEXT,
-                bill_file TEXT
-            );
-        """)
-    else:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS staff (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT UNIQUE,
-                designation TEXT,
-                daily_rate REAL,
-                mobile TEXT,
-                address TEXT,
-                work_type TEXT,
-                shift_timing TEXT
-            )
-        """)
-        for col_def in ["designation TEXT", "daily_rate REAL", "mobile TEXT", "address TEXT", "work_type TEXT", "shift_timing TEXT"]:
-            try:
-                cursor.execute(f"ALTER TABLE staff ADD COLUMN {col_def}")
-            except sqlite3.OperationalError:
-                pass
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS attendance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                staff_name TEXT,
-                date TEXT,
-                status TEXT,
-                overtime_amt REAL DEFAULT 0.0,
-                UNIQUE(staff_name, date)
-            )
-        """)
-        for col_def in ["status TEXT", "overtime_amt REAL DEFAULT 0.0"]:
-            try:
-                cursor.execute(f"ALTER TABLE attendance ADD COLUMN {col_def}")
-            except sqlite3.OperationalError:
-                pass
-
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS advance_payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                staff_name TEXT,
-                date TEXT,
-                amount REAL,
-                note TEXT
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS salary_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                staff_name TEXT,
-                month_year TEXT,
-                payable_days REAL,
-                gross_salary REAL,
-                advance_deduction REAL,
-                net_salary REAL,
-                paid_date TEXT,
-                UNIQUE(staff_name, month_year)
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS expenses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                date TEXT,
-                category TEXT,
-                amount REAL,
-                details TEXT,
-                bill_file TEXT
-            )
-        """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS staff (
+            id SERIAL PRIMARY KEY,
+            name TEXT UNIQUE,
+            designation TEXT,
+            daily_rate REAL,
+            mobile TEXT,
+            address TEXT,
+            work_type TEXT,
+            shift_timing TEXT
+        );
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            id SERIAL PRIMARY KEY,
+            staff_name TEXT,
+            date TEXT,
+            status TEXT,
+            overtime_amt REAL DEFAULT 0.0,
+            UNIQUE(staff_name, date)
+        );
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS advance_payments (
+            id SERIAL PRIMARY KEY,
+            staff_name TEXT,
+            date TEXT,
+            amount REAL,
+            note TEXT
+        );
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS salary_history (
+            id SERIAL PRIMARY KEY,
+            staff_name TEXT,
+            month_year TEXT,
+            payable_days REAL,
+            gross_salary REAL,
+            advance_deduction REAL,
+            net_salary REAL,
+            paid_date TEXT,
+            UNIQUE(staff_name, month_year)
+        );
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id SERIAL PRIMARY KEY,
+            date TEXT,
+            category TEXT,
+            amount REAL,
+            details TEXT,
+            bill_file TEXT
+        );
+    """)
     
     conn.commit()
     cursor.close()
@@ -393,7 +321,8 @@ menu = [
     "💸 Advance Entry (ઉપાડ)",
     "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)",
     "📊 Master Report (માસિક માસ્ટર રિપોર્ટ)",
-    "👤 Manage Staff (કર્મચારી)"
+    "👤 Manage Staff (કર્મચારી)",
+    "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)"
 ]
 
 st.sidebar.markdown("### 🚀 Navigation Menu")
@@ -407,7 +336,7 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
     with col_d1:
         att_date = st.date_input("તારીખ પસંદ કરો", datetime.date.today())
 
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name, work_type, shift_timing FROM staff ORDER BY name ASC")
     staff_rows = cursor.fetchall()
@@ -418,10 +347,7 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
         st.write("")
         att_data = {}
         for staff, w_type, shift in staff_rows:
-            if db_type == "postgres":
-                cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date=%s", (staff, str(att_date)))
-            else:
-                cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date=?", (staff, str(att_date)))
+            cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date=%s", (staff, str(att_date)))
             row = cursor.fetchone()
             default_idx = 0
             def_ot = 0.0
@@ -443,18 +369,11 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
         st.write("---")
         if st.button("💾 Save Attendance & Overtime", type="primary", use_container_width=True):
             for staff, (status, ot_amt) in att_data.items():
-                if db_type == "postgres":
-                    cursor.execute("""
-                        INSERT INTO attendance (staff_name, date, status, overtime_amt)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT(staff_name, date) DO UPDATE SET status=EXCLUDED.status, overtime_amt=EXCLUDED.overtime_amt
-                    """, (staff, str(att_date), status, ot_amt))
-                else:
-                    cursor.execute("""
-                        INSERT INTO attendance (staff_name, date, status, overtime_amt)
-                        VALUES (?, ?, ?, ?)
-                        ON CONFLICT(staff_name, date) DO UPDATE SET status=excluded.status, overtime_amt=excluded.overtime_amt
-                    """, (staff, str(att_date), status, ot_amt))
+                cursor.execute("""
+                    INSERT INTO attendance (staff_name, date, status, overtime_amt)
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT(staff_name, date) DO UPDATE SET status=EXCLUDED.status, overtime_amt=EXCLUDED.overtime_amt
+                """, (staff, str(att_date), status, ot_amt))
             conn.commit()
             cursor.close()
             conn.close()
@@ -475,7 +394,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
 
     max_days = calendar.monthrange(int(year), int(month))[1]
 
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -484,10 +403,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
         start_date = f"{year}-{int(month):02d}-01"
         end_date = f"{year}-{int(month):02d}-{max_days}"
         
-        if db_type == "postgres":
-            cursor.execute("SELECT staff_name, date, status FROM attendance WHERE date BETWEEN %s AND %s", (start_date, end_date))
-        else:
-            cursor.execute("SELECT staff_name, date, status FROM attendance WHERE date BETWEEN ? AND ?", (start_date, end_date))
+        cursor.execute("SELECT staff_name, date, status FROM attendance WHERE date BETWEEN %s AND %s", (start_date, end_date))
         att_records = cursor.fetchall()
 
         att_dict = {}
@@ -522,7 +438,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
 elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
     st.markdown('<div class="section-title">💰 માસિક પગાર ગણતરી, સ્લિપ & પેઇડ/પેન્ડિંગ લિસ્ટ</div>', unsafe_allow_html=True)
     
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -541,10 +457,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
         st.write("---")
         st.markdown(f"### 📋 કર્મચારીઓનું માસિક લિસ્ટ ({month_year_str})")
 
-        if db_type == "postgres":
-            cursor.execute("SELECT staff_name, id, net_salary, payable_days, gross_salary, advance_deduction FROM salary_history WHERE month_year=%s", (month_year_str,))
-        else:
-            cursor.execute("SELECT staff_name, id, net_salary, payable_days, gross_salary, advance_deduction FROM salary_history WHERE month_year=?", (month_year_str,))
+        cursor.execute("SELECT staff_name, id, net_salary, payable_days, gross_salary, advance_deduction FROM salary_history WHERE month_year=%s", (month_year_str,))
         paid_records = {row[0]: {"id": row[1], "net": row[2], "days": row[3], "gross": row[4], "adv": row[5]} for row in cursor.fetchall()}
 
         h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([2, 2.5, 1.5, 1, 1.5])
@@ -575,10 +488,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     st.write("---")
             with col5:
                 if staff in paid_records:
-                    if db_type == "postgres":
-                        cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (staff,))
-                    else:
-                        cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (staff,))
+                    cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (staff,))
                     d_rate_res = cursor.fetchone()
                     daily_rate = d_rate_res[0] if d_rate_res else 0.0
                     
@@ -586,10 +496,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     start_date = f"{sel_year}-{int(sel_month):02d}-01"
                     end_date = f"{sel_year}-{int(sel_month):02d}-{max_days}"
                     
-                    if db_type == "postgres":
-                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (staff, start_date, end_date))
-                    else:
-                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (staff, start_date, end_date))
+                    cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (staff, start_date, end_date))
                     att_rows = cursor.fetchall()
                     present_count = sum(1 for r in att_rows if r[0] == "Present")
                     half_count = sum(1 for r in att_rows if r[0] == "Half")
@@ -636,25 +543,16 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                 calculated_count = 0
                 for s_item in staff_list:
                     if s_item not in paid_records:
-                        if db_type == "postgres":
-                            cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (s_item,))
-                        else:
-                            cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (s_item,))
+                        cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (s_item,))
                         daily_rate = cursor.fetchone()[0]
 
-                        if db_type == "postgres":
-                            cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (s_item, start_date, end_date))
-                        else:
-                            cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (s_item, start_date, end_date))
+                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (s_item, start_date, end_date))
                         att_rows = cursor.fetchall()
                         present_count = sum(1 for r in att_rows if r[0] == "Present")
                         half_count = sum(1 for r in att_rows if r[0] == "Half")
                         tot_ot = sum(r[1] for r in att_rows if r[1])
 
-                        if db_type == "postgres":
-                            cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=%s AND date BETWEEN %s AND %s", (s_item, start_date, end_date))
-                        else:
-                            cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=? AND date BETWEEN ? AND ?", (s_item, start_date, end_date))
+                        cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=%s AND date BETWEEN %s AND %s", (s_item, start_date, end_date))
                         adv_row = cursor.fetchone()
                         adv_amt = adv_row[0] if adv_row[0] else 0.0
 
@@ -662,17 +560,11 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                         gross_salary = (payable_days * daily_rate) + tot_ot
                         net_salary = max(0.0, gross_salary - adv_amt)
 
-                        if db_type == "postgres":
-                            cursor.execute("""
-                                INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT(staff_name, month_year) DO NOTHING
-                            """, (s_item, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
-                        else:
-                            cursor.execute("""
-                                INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (s_item, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
+                        cursor.execute("""
+                            INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT(staff_name, month_year) DO NOTHING
+                        """, (s_item, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
                         calculated_count += 1
                 
                 conn.commit()
@@ -687,25 +579,16 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                 if sal_staff_choice in paid_records:
                     st.warning(f"⚠️ કર્મચારી '{sal_staff_choice}' નો પગાર આ મહિના માટે પહેલેથી ચૂકવાઈ ગયેલ છે!")
                 else:
-                    if db_type == "postgres":
-                        cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (sal_staff_choice,))
-                    else:
-                        cursor.execute("SELECT daily_rate FROM staff WHERE name=?", (sal_staff_choice,))
+                    cursor.execute("SELECT daily_rate FROM staff WHERE name=%s", (sal_staff_choice,))
                     daily_rate = cursor.fetchone()[0]
 
-                    if db_type == "postgres":
-                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (sal_staff_choice, start_date, end_date))
-                    else:
-                        cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff_choice, start_date, end_date))
+                    cursor.execute("SELECT status, overtime_amt FROM attendance WHERE staff_name=%s AND date BETWEEN %s AND %s", (sal_staff_choice, start_date, end_date))
                     att_rows = cursor.fetchall()
                     present_count = sum(1 for r in att_rows if r[0] == "Present")
                     half_count = sum(1 for r in att_rows if r[0] == "Half")
                     tot_ot = sum(r[1] for r in att_rows if r[1])
 
-                    if db_type == "postgres":
-                        cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=%s AND date BETWEEN %s AND %s", (sal_staff_choice, start_date, end_date))
-                    else:
-                        cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=? AND date BETWEEN ? AND ?", (sal_staff_choice, start_date, end_date))
+                    cursor.execute("SELECT SUM(amount) FROM advance_payments WHERE staff_name=%s AND date BETWEEN %s AND %s", (sal_staff_choice, start_date, end_date))
                     adv_row = cursor.fetchone()
                     adv_amt = adv_row[0] if adv_row[0] else 0.0
 
@@ -713,17 +596,11 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                     gross_salary = (payable_days * daily_rate) + tot_ot
                     net_salary = max(0.0, gross_salary - adv_amt)
 
-                    if db_type == "postgres":
-                        cursor.execute("""
-                            INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT(staff_name, month_year) DO NOTHING
-                        """, (sal_staff_choice, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (sal_staff_choice, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
+                    cursor.execute("""
+                        INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT(staff_name, month_year) DO NOTHING
+                    """, (sal_staff_choice, month_year_str, payable_days, gross_salary, adv_amt, net_salary, paid_date_str))
                     conn.commit()
                     cursor.close()
                     conn.close()
@@ -732,7 +609,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 
         st.write("---")
         st.markdown('<div class="section-title">🗑️ પગાર રેકોર્ડ ડિલીટ કરો</div>', unsafe_allow_html=True)
-        conn, db_type = get_db_connection()
+        conn, _ = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, staff_name, month_year, net_salary, paid_date FROM salary_history ORDER BY id DESC")
         all_history = cursor.fetchall()
@@ -743,10 +620,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
             
             if st.button("🗑️ Delete Selected Salary Record", type="secondary"):
                 del_id = hist_options[selected_hist_label]
-                if db_type == "postgres":
-                    cursor.execute("DELETE FROM salary_history WHERE id=%s", (del_id,))
-                else:
-                    cursor.execute("DELETE FROM salary_history WHERE id=?", (del_id,))
+                cursor.execute("DELETE FROM salary_history WHERE id=%s", (del_id,))
                 conn.commit()
                 cursor.close()
                 conn.close()
@@ -761,7 +635,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 elif choice == "💸 Advance Entry (ઉપાડ)":
     st.markdown('<div class="section-title">💸 કર્મચારી ઉપાડ / એડવાન્સ એન્ટ્રી</div>', unsafe_allow_html=True)
     
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -779,10 +653,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 
         if st.button("💾 Save Advance Payment", type="primary", use_container_width=True):
             if adv_amt > 0:
-                if db_type == "postgres":
-                    cursor.execute("INSERT INTO advance_payments (staff_name, date, amount, note) VALUES (%s, %s, %s, %s)", (adv_staff, str(adv_date), adv_amt, adv_note))
-                else:
-                    cursor.execute("INSERT INTO advance_payments (staff_name, date, amount, note) VALUES (?, ?, ?, ?)", (adv_staff, str(adv_date), adv_amt, adv_note))
+                cursor.execute("INSERT INTO advance_payments (staff_name, date, amount, note) VALUES (%s, %s, %s, %s)", (adv_staff, str(adv_date), adv_amt, adv_note))
                 conn.commit()
                 cursor.close()
                 conn.close()
@@ -793,7 +664,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 
         st.write("---")
         st.markdown("### 📜 ઉપાડ રેકોર્ડ હિસ્ટ્રી")
-        conn, db_type = get_db_connection()
+        conn, _ = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, staff_name, date, amount, note FROM advance_payments ORDER BY id DESC")
         adv_rows = cursor.fetchall()
@@ -806,7 +677,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
     st.markdown('<div class="section-title">📝 દૈનિક ખર્ચ એન્ટ્રી & બિલ અપલોડ</div>', unsafe_allow_html=True)
     
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
 
     col_e1, col_e2 = st.columns(2)
@@ -828,10 +699,7 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
                 with open(file_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
 
-            if db_type == "postgres":
-                cursor.execute("INSERT INTO expenses (date, category, amount, details, bill_file) VALUES (%s, %s, %s, %s, %s)", (str(exp_date), exp_cat, exp_amt, exp_detail, saved_filename))
-            else:
-                cursor.execute("INSERT INTO expenses (date, category, amount, details, bill_file) VALUES (?, ?, ?, ?, ?)", (str(exp_date), exp_cat, exp_amt, exp_detail, saved_filename))
+            cursor.execute("INSERT INTO expenses (date, category, amount, details, bill_file) VALUES (%s, %s, %s, %s, %s)", (str(exp_date), exp_cat, exp_amt, exp_detail, saved_filename))
             conn.commit()
             cursor.close()
             conn.close()
@@ -844,10 +712,7 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
     st.markdown("### 📊 ખર્ચ રિપોર્ટ & બિલ વ્યૂ")
     filter_date = st.date_input("જે તારીખનો હિસાબ જોવો હોય તે પસંદ કરો", datetime.date.today(), key="f_date")
 
-    if db_type == "postgres":
-        cursor.execute("SELECT id, category, amount, details, bill_file FROM expenses WHERE date=%s", (str(filter_date),))
-    else:
-        cursor.execute("SELECT id, category, amount, details, bill_file FROM expenses WHERE date=?", (str(filter_date),))
+    cursor.execute("SELECT id, category, amount, details, bill_file FROM expenses WHERE date=%s", (str(filter_date),))
     e_rows = cursor.fetchall()
 
     if e_rows:
@@ -880,10 +745,7 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
         sel_del_exp = st.selectbox("ડિલીટ કરવા માટે એન્ટ્રી પસંદ કરો", list(exp_dict.keys()))
         if st.button("🗑️ Delete Selected Expense", type="secondary"):
             del_exp_id = exp_dict[sel_del_exp]
-            if db_type == "postgres":
-                cursor.execute("DELETE FROM expenses WHERE id=%s", (del_exp_id,))
-            else:
-                cursor.execute("DELETE FROM expenses WHERE id=?", (del_exp_id,))
+            cursor.execute("DELETE FROM expenses WHERE id=%s", (del_exp_id,))
             conn.commit()
             cursor.close()
             conn.close()
@@ -907,20 +769,14 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     start_date = f"{rep_year}-{int(rep_month):02d}-01"
     end_date = f"{rep_year}-{int(rep_month):02d}-{max_days}"
 
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
 
-    if db_type == "postgres":
-        cursor.execute("SELECT SUM(net_salary) FROM salary_history WHERE month_year=%s", (month_year_str,))
-    else:
-        cursor.execute("SELECT SUM(net_salary) FROM salary_history WHERE month_year=?", (month_year_str,))
+    cursor.execute("SELECT SUM(net_salary) FROM salary_history WHERE month_year=%s", (month_year_str,))
     tot_sal_row = cursor.fetchone()
     total_paid_salary = tot_sal_row[0] if tot_sal_row[0] else 0.0
 
-    if db_type == "postgres":
-        cursor.execute("SELECT SUM(amount) FROM expenses WHERE date BETWEEN %s AND %s", (start_date, end_date))
-    else:
-        cursor.execute("SELECT SUM(amount) FROM expenses WHERE date BETWEEN ? AND ?", (start_date, end_date))
+    cursor.execute("SELECT SUM(amount) FROM expenses WHERE date BETWEEN %s AND %s", (start_date, end_date))
     tot_exp_row = cursor.fetchone()
     total_office_expenses = tot_exp_row[0] if tot_exp_row[0] else 0.0
 
@@ -937,16 +793,10 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     with col_s3:
         st.metric(label="💼 આખા મહિનાનો કુલ ખર્ચ (GRAND TOTAL)", value=f"RS {grand_total:,.2f}")
 
-    if db_type == "postgres":
-        cursor.execute("SELECT date, category, amount, details FROM expenses WHERE date BETWEEN %s AND %s ORDER BY date ASC", (start_date, end_date))
-    else:
-        cursor.execute("SELECT date, category, amount, details FROM expenses WHERE date BETWEEN ? AND ? ORDER BY date ASC", (start_date, end_date))
+    cursor.execute("SELECT date, category, amount, details FROM expenses WHERE date BETWEEN %s AND %s ORDER BY date ASC", (start_date, end_date))
     exp_records = cursor.fetchall()
 
-    if db_type == "postgres":
-        cursor.execute("SELECT staff_name, payable_days, gross_salary, advance_deduction, net_salary, paid_date FROM salary_history WHERE month_year=%s", (month_year_str,))
-    else:
-        cursor.execute("SELECT staff_name, payable_days, gross_salary, advance_deduction, net_salary, paid_date FROM salary_history WHERE month_year=?", (month_year_str,))
+    cursor.execute("SELECT staff_name, payable_days, gross_salary, advance_deduction, net_salary, paid_date FROM salary_history WHERE month_year=%s", (month_year_str,))
     sal_records = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -980,7 +830,7 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
 elif choice == "👤 Manage Staff (કર્મચારી)":
     st.markdown('<div class="section-title">👤 કર્મચારી મેનેજમેન્ટ (નવો ઉમેરો, એડિટ કરો અને લિસ્ટ)</div>', unsafe_allow_html=True)
     
-    conn, db_type = get_db_connection()
+    conn, _ = get_db_connection()
     cursor = conn.cursor()
 
     staff_tab1, staff_tab2 = st.tabs(["➕ નવો કર્મચારી ઉમેરો", "✏️ કર્મચારી વિગત એડિટ / સુધારો કરો"])
@@ -1000,16 +850,10 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
         if st.button("💾 Save Staff", type="primary", use_container_width=True):
             if s_name and s_rate > 0:
                 try:
-                    if db_type == "postgres":
-                        cursor.execute("""
-                            INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
+                    cursor.execute("""
+                        INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """, (s_name, s_desig, s_rate, s_mob, s_address, s_work_type, s_shift))
                     conn.commit()
                     cursor.close()
                     conn.close()
@@ -1032,7 +876,7 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
             staff_names_list = [r[1] for r in staff_rows_all]
             edit_staff_choice = st.selectbox("એડિટ કરવા માટે કર્મચારી પસંદ કરો", staff_names_list, key="edit_sel_staff")
 
-            cursor.execute("SELECT id, name, designation, daily_rate, mobile, address, work_type, shift_timing FROM staff WHERE name=?", (edit_staff_choice,))
+            cursor.execute("SELECT id, name, designation, daily_rate, mobile, address, work_type, shift_timing FROM staff WHERE name=%s", (edit_staff_choice,))
             curr_data = cursor.fetchone()
 
             if curr_data:
@@ -1052,14 +896,9 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
                     submit_update = st.form_submit_button("🔄 Update Staff Details (વિગત અપડેટ કરો)", type="primary")
 
                     if submit_update:
-                        if db_type == "postgres":
-                            cursor.execute("""
-                                UPDATE staff SET name=%s, designation=%s, daily_rate=%s, mobile=%s, address=%s, work_type=%s, shift_timing=%s WHERE id=%s
-                            """, (e_name, e_desig, e_rate, e_mob, e_addr, e_wtype, e_shift, s_id))
-                        else:
-                            cursor.execute("""
-                                UPDATE staff SET name=?, designation=?, daily_rate=?, mobile=?, address=?, work_type=?, shift_timing=? WHERE id=?
-                            """, (e_name, e_desig, e_rate, e_mob, e_addr, e_wtype, e_shift, s_id))
+                        cursor.execute("""
+                            UPDATE staff SET name=%s, designation=%s, daily_rate=%s, mobile=%s, address=%s, work_type=%s, shift_timing=%s WHERE id=%s
+                        """, (e_name, e_desig, e_rate, e_mob, e_addr, e_wtype, e_shift, s_id))
                         conn.commit()
                         st.success(f"✅ કર્મચારી '{e_name}' ની વિગતો સફળતાપૂર્વક અપડેટ થઈ ગઈ!")
                         st.rerun()
@@ -1075,10 +914,7 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
     if all_staff_to_del:
         del_staff_name = st.selectbox("છૂટા થયેલા / ડિલીટ કરવા માટે કર્મચારી પસંદ કરો", all_staff_to_del, key="del_sel_staff")
         if st.button("🗑️ Delete Staff (કર્મચારી કાઢી નાખો)", type="secondary"):
-            if db_type == "postgres":
-                cursor.execute("DELETE FROM staff WHERE name=%s", (del_staff_name,))
-            else:
-                cursor.execute("DELETE FROM staff WHERE name=?", (del_staff_name,))
+            cursor.execute("DELETE FROM staff WHERE name=%s", (del_staff_name,))
             conn.commit()
             st.success(f"✅ કર્મચારી '{del_staff_name}' સફળતાપૂર્વક ડિલીટ થઈ ગયો છે!")
             st.rerun()
@@ -1092,6 +928,103 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
     if staff_rows:
         st.dataframe(staff_rows, use_container_width=True)
     
+    cursor.close()
+    conn.close()
+
+# --- 8. BACKUP & RESTORE ---
+elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)":
+    st.markdown('<div class="section-title">💾 ડેટાબેઝ સુરક્ષા & બેકઅપ સિસ્ટમ (Backup & Restore)</div>', unsafe_allow_html=True)
+    
+    b_tab1, b_tab2 = st.tabs(["📥 ડેટાબેઝ બેકઅપ ડાઉનલોડ કરો (Export)", "📤 જૂનું બેકઅપ સોફ્ટવેરમાં ચડાવો (Restore)"])
+    
+    conn, _ = get_db_connection()
+    cursor = conn.cursor()
+
+    with b_tab1:
+        st.write("💡 તમારા લેપટોપમાં સોફ્ટવેરનો આખો ડેટા સુરક્ષિત રાખવા માટે બેકઅપ ફાઈલ ડાઉનલોડ કરી લો.")
+        
+        if st.button("📦 આખા ડેટાનો બેકઅપ તૈયાર કરો", type="primary"):
+            tables = ["staff", "attendance", "advance_payments", "salary_history", "expenses"]
+            
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                for t in tables:
+                    df = pd.read_sql_query(f"SELECT * FROM {t}", conn)
+                    df.to_excel(writer, sheet_name=t, index=False)
+            
+            output.seek(0)
+            
+            st.download_button(
+                label="⬇️ Excel Backup ફાઈલ ડાઉનલોડ કરો (.xlsx)",
+                data=output.getvalue(),
+                file_name=f"Payroll_Backup_{datetime.date.today().strftime('%Y_%m_%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+            st.success("✅ તમારો બેકઅપ સફળતાપૂર્વક તૈયાર થઈ ગયો છે!")
+
+    with b_tab2:
+        st.write("⚠️ જો ક્યારેય ડેટાબેઝમાં કોઈ સમસ્યા થાય અથવા નવું સર્વર ચાલુ કરો, તો અહીંથી તમારો અગાઉ ડાઉનલોડ કરેલો Excel બેકઅપ અપલોડ કરી શકો છો.")
+        
+        uploaded_backup = st.file_uploader("📂 Choose Backup Excel File (.xlsx)", type=["xlsx"])
+        
+        if uploaded_backup is not None:
+            if st.button("🚀 ડેટાબેઝમાં બેકઅપ રીસ્ટોર કરો", type="primary"):
+                try:
+                    excel_data = pd.ExcelFile(uploaded_backup)
+                    
+                    if "staff" in excel_data.sheet_names:
+                        df_staff = pd.read_excel(excel_data, "staff")
+                        for _, row in df_staff.iterrows():
+                            cursor.execute("""
+                                INSERT INTO staff (name, designation, daily_rate, mobile, address, work_type, shift_timing)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT(name) DO UPDATE SET
+                                designation=EXCLUDED.designation, daily_rate=EXCLUDED.daily_rate,
+                                mobile=EXCLUDED.mobile, address=EXCLUDED.address,
+                                work_type=EXCLUDED.work_type, shift_timing=EXCLUDED.shift_timing
+                            """, (row['name'], row['designation'], row['daily_rate'], row['mobile'], row['address'], row['work_type'], row['shift_timing']))
+
+                    if "attendance" in excel_data.sheet_names:
+                        df_att = pd.read_excel(excel_data, "attendance")
+                        for _, row in df_att.iterrows():
+                            cursor.execute("""
+                                INSERT INTO attendance (staff_name, date, status, overtime_amt)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT(staff_name, date) DO UPDATE SET
+                                status=EXCLUDED.status, overtime_amt=EXCLUDED.overtime_amt
+                            """, (row['staff_name'], str(row['date']), row['status'], row['overtime_amt']))
+
+                    if "advance_payments" in excel_data.sheet_names:
+                        df_adv = pd.read_excel(excel_data, "advance_payments")
+                        for _, row in df_adv.iterrows():
+                            cursor.execute("""
+                                INSERT INTO advance_payments (staff_name, date, amount, note)
+                                VALUES (%s, %s, %s, %s)
+                            """, (row['staff_name'], str(row['date']), row['amount'], row['note']))
+
+                    if "salary_history" in excel_data.sheet_names:
+                        df_sal = pd.read_excel(excel_data, "salary_history")
+                        for _, row in df_sal.iterrows():
+                            cursor.execute("""
+                                INSERT INTO salary_history (staff_name, month_year, payable_days, gross_salary, advance_deduction, net_salary, paid_date)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT(staff_name, month_year) DO NOTHING
+                            """, (row['staff_name'], str(row['month_year']), row['payable_days'], row['gross_salary'], row['advance_deduction'], row['net_salary'], str(row['paid_date'])))
+
+                    if "expenses" in excel_data.sheet_names:
+                        df_exp = pd.read_excel(excel_data, "expenses")
+                        for _, row in df_exp.iterrows():
+                            cursor.execute("""
+                                INSERT INTO expenses (date, category, amount, details, bill_file)
+                                VALUES (%s, %s, %s, %s, %s)
+                            """, (str(row['date']), row['category'], row['amount'], row['details'], row['bill_file']))
+
+                    conn.commit()
+                    st.success("🎉 તમારો આખો બેકઅપ સફળતાપૂર્વક રીસ્ટોર (અપલોડ) થઈ ગયો છે!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"⚠️ બેકઅપ રીસ્ટોર કરવામાં ભૂલ થઈ: {e}")
+
     cursor.close()
     conn.close()
 
