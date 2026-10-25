@@ -69,7 +69,6 @@ st.markdown("""
     [data-testid="stSidebar"] * {
         color: #cbd5e1 !important;
     }
-    /* Textarea & Text Input Font Color Fix */
     textarea, input {
         color: #0f172a !important;
     }
@@ -90,8 +89,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- ડેટાબેઝ કનેક્શન અને ઓટો-અપગ્રેડ -----------------
-LOCAL_DB = "payroll_mobile.db"
+# ----------------- ડેટાબેઝ કનેક્શન (Absolute Path Fix) -----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_DB = os.path.join(BASE_DIR, "payroll_mobile.db")
 
 def get_local_connection():
     conn = sqlite3.connect(LOCAL_DB, check_same_thread=False)
@@ -178,7 +178,6 @@ def init_db():
                 shift_timing TEXT
             )
         """)
-        # Missing columns auto-add check for existing SQLite staff DB
         for col_def in ["designation TEXT", "daily_rate REAL", "mobile TEXT", "address TEXT", "work_type TEXT", "shift_timing TEXT"]:
             try:
                 cursor.execute(f"ALTER TABLE staff ADD COLUMN {col_def}")
@@ -195,7 +194,6 @@ def init_db():
                 UNIQUE(staff_name, date)
             )
         """)
-        # Missing columns auto-add check for existing SQLite attendance DB
         for col_def in ["status TEXT", "overtime_amt REAL DEFAULT 0.0"]:
             try:
                 cursor.execute(f"ALTER TABLE attendance ADD COLUMN {col_def}")
@@ -460,7 +458,7 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
             conn.commit()
             cursor.close()
             conn.close()
-            st.success(f"✅ તારીખ {att_date} ની હાજરી અને ઓવર ટાઈમ સફળતાપૂર્વਕ સેવ થઈ ગયા!")
+            st.success(f"✅ તારીખ {att_date} ની હાજરી અને ઓવર ટાઈમ સફળતાપૂર્વક સેવ થઈ ગયા!")
             st.rerun()
     cursor.close()
     conn.close()
@@ -985,7 +983,6 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
 
-    # Tabs for Add New vs Edit Existing
     staff_tab1, staff_tab2 = st.tabs(["➕ નવો કર્મચારી ઉમેરો", "✏️ કર્મચારી વિગત એડિટ / સુધારો કરો"])
 
     with staff_tab1:
@@ -1035,7 +1032,6 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
             staff_names_list = [r[1] for r in staff_rows_all]
             edit_staff_choice = st.selectbox("એડિટ કરવા માટે કર્મચારી પસંદ કરો", staff_names_list, key="edit_sel_staff")
 
-            # Get selected staff current details
             cursor.execute("SELECT id, name, designation, daily_rate, mobile, address, work_type, shift_timing FROM staff WHERE name=?", (edit_staff_choice,))
             curr_data = cursor.fetchone()
 
