@@ -89,21 +89,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------- ડેટાબેઝ કનેક્શન (માત્ર Supabase ઓનલાઈન) -----------------
+# ----------------- ડેટાબેઝ કનેક્શન (Supabase ક્લાઉડ) -----------------
 def get_db_connection():
-    try:
-        if "postgres" in st.secrets:
-            db_url = st.secrets["postgres"]["url"]
-            return psycopg2.connect(db_url), "postgres"
-    except Exception:
-        pass
-    
-    # ફોલબેક Supabase Direct Connection URL
-    fallback_url = "postgresql://postgres:804032%40Chitra@db.ejmbyqmvshipsdpithjzm.supabase.co:5432/postgres"
-    return psycopg2.connect(fallback_url), "postgres"
+    db_url = st.secrets["postgres"]["url"]
+    return psycopg2.connect(db_url)
 
 def init_db():
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -310,7 +302,7 @@ def generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_of
 st.markdown("""
 <div class="pro-header">
     <h1>⚡ COURIER SOLUTION - PAYROLL & MASTER EXPENSE PRO</h1>
-    <p>Staff Attendance, Shift, Overtime, Daily Expense & Monthly Master Analytics (Fast & Secure Direct Mode)</p>
+    <p>Staff Attendance, Shift, Overtime, Daily Expense & Monthly Master Analytics (Cloud Online Mode)</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -336,7 +328,7 @@ if choice == "📅 Daily Attendance (હાજરી પૂરો)":
     with col_d1:
         att_date = st.date_input("તારીખ પસંદ કરો", datetime.date.today())
 
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name, work_type, shift_timing FROM staff ORDER BY name ASC")
     staff_rows = cursor.fetchall()
@@ -394,7 +386,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
 
     max_days = calendar.monthrange(int(year), int(month))[1]
 
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -438,7 +430,7 @@ elif choice == "📊 Monthly Calendar View (કેલેન્ડર)":
 elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
     st.markdown('<div class="section-title">💰 માસિક પગાર ગણતરી, સ્લિપ & પેઇડ/પેન્ડિંગ લિસ્ટ</div>', unsafe_allow_html=True)
     
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -609,7 +601,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 
         st.write("---")
         st.markdown('<div class="section-title">🗑️ પગાર રેકોર્ડ ડિલીટ કરો</div>', unsafe_allow_html=True)
-        conn, _ = get_db_connection()
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, staff_name, month_year, net_salary, paid_date FROM salary_history ORDER BY id DESC")
         all_history = cursor.fetchall()
@@ -620,6 +612,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
             
             if st.button("🗑️ Delete Selected Salary Record", type="secondary"):
                 del_id = hist_options[selected_hist_label]
+                cursor.execute("SELECT staff_name FROM salary_history WHERE id=%s", (del_id,))
                 cursor.execute("DELETE FROM salary_history WHERE id=%s", (del_id,))
                 conn.commit()
                 cursor.close()
@@ -635,7 +628,7 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
 elif choice == "💸 Advance Entry (ઉપાડ)":
     st.markdown('<div class="section-title">💸 કર્મચારી ઉપાડ / એડવાન્સ એન્ટ્રી</div>', unsafe_allow_html=True)
     
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM staff ORDER BY name ASC")
     staff_list = [r[0] for r in cursor.fetchall()]
@@ -664,7 +657,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 
         st.write("---")
         st.markdown("### 📜 ઉપાડ રેકોર્ડ હિસ્ટ્રી")
-        conn, _ = get_db_connection()
+        conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT id, staff_name, date, amount, note FROM advance_payments ORDER BY id DESC")
         adv_rows = cursor.fetchall()
@@ -677,7 +670,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
 elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
     st.markdown('<div class="section-title">📝 દૈનિક ખર્ચ એન્ટ્રી & બિલ અપલોડ</div>', unsafe_allow_html=True)
     
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     col_e1, col_e2 = st.columns(2)
@@ -769,7 +762,7 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
     start_date = f"{rep_year}-{int(rep_month):02d}-01"
     end_date = f"{rep_year}-{int(rep_month):02d}-{max_days}"
 
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     cursor.execute("SELECT SUM(net_salary) FROM salary_history WHERE month_year=%s", (month_year_str,))
@@ -830,7 +823,7 @@ elif choice == "📊 Master Report (માસિક માસ્ટર રિપ
 elif choice == "👤 Manage Staff (કર્મચારી)":
     st.markdown('<div class="section-title">👤 કર્મચારી મેનેજમેન્ટ (નવો ઉમેરો, એડિટ કરો અને લિસ્ટ)</div>', unsafe_allow_html=True)
     
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     staff_tab1, staff_tab2 = st.tabs(["➕ નવો કર્મચારી ઉમેરો", "✏️ કર્મચારી વિગત એડિટ / સુધારો કરો"])
@@ -937,7 +930,7 @@ elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)"
     
     b_tab1, b_tab2 = st.tabs(["📥 ડેટાબેઝ બેકઅપ ડાઉનલોડ કરો (Export)", "📤 જૂનું બેકઅપ સોફ્ટવેરમાં ચડાવો (Restore)"])
     
-    conn, _ = get_db_connection()
+    conn = get_db_connection()
     cursor = conn.cursor()
 
     with b_tab1:
