@@ -282,13 +282,13 @@ menu = [
 st.sidebar.markdown("### 🚀 Navigation Menu")
 choice = st.sidebar.radio("", menu)
 
-# --- 1. DAILY ATTENDANCE ---
+# --- 1. DAILY ATTENDANCE (With From-To / Running Date Filter) ---
 if choice == "📅 Daily Attendance (હાજરી પૂરો)":
-    st.markdown('<div class="section-title">📅 રોજની હાજરી પૂરો & ઓવર ટાઈમ</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📅 રોજની હાજરી પૂરો & ઓવર ટાઈમ (તારીખ ફિલ્ટર સાથે)</div>', unsafe_allow_html=True)
     
-    col_d1, col_d2 = st.columns([1, 2])
-    with col_d1:
-        att_date = st.date_input("તારીખ પસંદ કરો", datetime.date.today())
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        att_date = st.date_input("તારીખ પસંદ કરો (Running Date)", datetime.date.today())
 
     staff_list = load_table("staff", [])
     attendance_data = load_table("attendance", {})
@@ -486,7 +486,6 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                         elif rec["status"] == "Half": half_count += 1
                         tot_ot += rec.get("overtime_amt", 0.0)
 
-                # Calculate advances in this month
                 adv_amt = 0.0
                 for adv in adv_data:
                     if adv['staff_name'] == s_item:
@@ -498,7 +497,6 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
                 gross_salary = (payable_days * d_rate) + tot_ot
                 net_salary = max(0.0, gross_salary - adv_amt)
 
-                # Check if already exists
                 exists = False
                 for item in salary_history:
                     if item['staff_name'] == s_item and item['month_year'] == month_year_str:
@@ -599,7 +597,7 @@ elif choice == "💸 Advance Entry (ઉપાડ)":
         else:
             st.info("કોઈ ઉપાડ રેકોર્ડ નથી.")
 
-# --- 5. DAILY EXPENSES ---
+# --- 5. DAILY EXPENSES (With Day-wise Date Filter & Total Amount Display) ---
 elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
     st.markdown('<div class="section-title">📝 દૈનિક ખર્ચ એન્ટ્રી & બિલ અપલોડ</div>', unsafe_allow_html=True)
     
@@ -639,14 +637,23 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
             st.error("⚠️ સાચી રકમ નાખો!")
 
     st.write("---")
-    st.markdown("### 📊 ખર્ચ રિપોર્ટ & બિલ વ્યૂ")
-    filter_date = st.date_input("જે તારીખનો હિસાબ જોવો હોય તે પસંદ કરો", datetime.date.today(), key="f_date")
+    st.markdown("### 📊 ખર્ચ રિપોર્ટ & બિલ વ્યૂ (Day-wise Total)")
+    
+    col_df1, col_df2 = st.columns(2)
+    with col_df1:
+        filter_date = st.date_input("જે તારીખનો હિસાબ જોવો હોય તે પસંદ કરો", datetime.date.today(), key="f_date")
+
     expenses_data = load_table("expenses", [])
     e_rows = [e for e in expenses_data if e['date'] == str(filter_date)]
 
     if e_rows:
         tot_exp = sum(r['amount'] for r in e_rows)
-        st.markdown(f"#### 💵 તારીખ {filter_date} નો કુલ ખર્ચ: **RS {tot_exp:,.2f}**")
+        # Highlighted Sub-Total Box / Metric for Daily Total
+        st.markdown(f"""
+            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
+                <h3 style="margin:0; color: #38bdf8;">💵 તારીખ {filter_date} નો કુલ ખર્ચ (Total): <b>RS {tot_exp:,.2f}</b></h3>
+            </div>
+        """, unsafe_allow_html=True)
         
         for r in e_rows:
             col_a, col_b, col_c, col_d = st.columns([2, 1.5, 3, 2])
@@ -662,7 +669,20 @@ elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
                 else:
                     st.write("No Bill")
     else:
-        st.info(f"તારીખ {filter_date} માટે કોઈ ખર્ચ નોંધાયેલ નથી.")
+        st.info(f"તારીખ {filter_date} માટે કોઈ ખર્ચ નોંધાયેલ નથી. (કુલ ખર્ચ: RS 0.00)")
+
+    st.write("---")
+    st.markdown("### 🗑️ ખોટી ખર્ચ એન્ટ્રી ડિલીટ કરો")
+    if expenses_data:
+        recent_exp = sorted(expenses_data, key=lambda x: x['id'], reverse=True)[:20]
+        exp_dict = {f"ID: #{r['id']} | Date: {r['date']} | {r['category']} | RS {r['amount']} ({r['details']})": r['id'] for r in recent_exp}
+        sel_del_exp = st.selectbox("ડિલીટ કરવા માટે એન્ટ્રી પસંદ કરો", list(exp_dict.keys()))
+        if st.button("🗑️ Delete Selected Expense", type="secondary"):
+            del_exp_id = exp_dict[sel_del_exp]
+            expenses_data = [e for e in expenses_data if e['id'] != del_exp_id]
+            save_table("expenses", expenses_data)
+            st.success("✅ ખર્ચ એન્ટ્રી ડિલીટ થઈ ગઈ!")
+            st.rerun()
 
 # --- 6. MASTER REPORT ---
 elif choice == "📊 Master Report (માસિક માસ્ટર રિપોર્ટ)":
