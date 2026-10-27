@@ -485,9 +485,9 @@ elif choice == "👤 Manage Staff (કર્મચારી)":
 
 # --- 8. BACKUP & RESTORE ---
 elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)":
-    st.markdown('<div class="section-title">💾 બેકઅપ અને ડેટા સુરક્ષા</div>', unsafe_allow_html=True)
-    st.write("તમે આ ડેટાનો બેકઅપ ડાઉનલોડ કરી શકો છો જેથી ડેટા ક્યારેય ખોવાય નહીં.")
+    st.markdown('<div class="section-title">💾 બેકઅપ અને ડેટા સુરક્ષા (Backup & Restore)</div>', unsafe_allow_html=True)
     
+    st.write("### 📥 1. ડેટા બેકઅપ ડાઉનલોડ કરો")
     all_data = {
         "staff": load_table("staff", []),
         "attendance": load_table("attendance", {}),
@@ -500,6 +500,23 @@ elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)"
         label="📥 Download Complete Backup (JSON)",
         data=json_str,
         file_name=f"payroll_backup_{datetime.date.today()}.json",
-        mime="application/json"
+        mime="application/json",
+        type="primary"
     )
+    
+    st.markdown("---")
+    st.write("### 📤 2. જૂનો બેકઅપ ડેટા રીસ્ટોર (Restore) કરો")
+    uploaded_backup = st.file_uploader("તમારી બેકઅપ JSON ફાઇલ અહીં અપલોડ કરો:", type=["json"], key="restore_file")
+    
+    if uploaded_backup is not None:
+        if st.button("🔄 Restore Data Now", type="primary"):
+            try:
+                backup_content = json.load(uploaded_backup)
+                for tbl in ["staff", "attendance", "advance_payments", "salary_history", "expenses"]:
+                    if tbl in backup_content:
+                        save_table(tbl, backup_content[tbl])
+                st.success("✅ બેકઅપ સફળતાપૂર્વક રીસ્ટોર થઈ ગયો છે! (Data Restored Successfully)")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ બેકઅપ ફાઇલ વાંચવામાં ભૂલ છે: {e}")
 
