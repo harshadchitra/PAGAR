@@ -17,7 +17,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Local Storage Folder for JSON Data Files
+# Local Storage Folder for Cloud/Persistent Data Files
 DATA_DIR = "cloud_data"
 if not os.path.exists(DATA_DIR):
     os.makedirs(DATA_DIR)
@@ -25,7 +25,7 @@ if not os.path.exists(DATA_DIR):
 if not os.path.exists("uploaded_bills"):
     os.makedirs("uploaded_bills")
 
-# Helper functions to load/save JSON tables locally with Exception Safety
+# Helper functions to load/save JSON tables locally with Atomic Exception Safety
 def load_table(table_name, default_value):
     file_path = os.path.join(DATA_DIR, f"{table_name}.json")
     if os.path.exists(file_path):
@@ -505,18 +505,30 @@ elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)"
     )
     
     st.markdown("---")
-    st.write("### 📤 2. જૂનો બેકઅપ ડેટા રીસ્ટોર (Restore) કરો")
-    uploaded_backup = st.file_uploader("તમારી બેકઅપ JSON ફાઇલ અહીં અપલોડ કરો:", type=["json"], key="restore_file")
+    st.write("### 📤 2. જૂનો બેકઅપ ડેટા રીસ્ટોર (Restore) કરો (JSON / Excel / CSV)")
+    uploaded_backup = st.file_uploader("તમારી બેકઅપ ફાઇલ અહીં અપલોડ કરો:", type=["json", "xlsx", "csv"], key="restore_file")
     
     if uploaded_backup is not None:
+        file_extension = uploaded_backup.name.split('.')[-1].lower()
         if st.button("🔄 Restore Data Now", type="primary"):
             try:
-                backup_content = json.load(uploaded_backup)
-                for tbl in ["staff", "attendance", "advance_payments", "salary_history", "expenses"]:
-                    if tbl in backup_content:
-                        save_table(tbl, backup_content[tbl])
-                st.success("✅ બેકઅપ સફળતાપૂર્વક રીસ્ટોર થઈ ગયો છે! (Data Restored Successfully)")
+                if file_extension == "json":
+                    backup_content = json.load(uploaded_backup)
+                    for tbl in ["staff", "attendance", "advance_payments", "salary_history", "expenses"]:
+                        if tbl in backup_content:
+                            save_table(tbl, backup_content[tbl])
+                    st.success("✅ JSON બેકઅપ સફળતાપૂર્વક રીસ્ટોર થઈ ગયો છે!")
+                elif file_extension in ["xlsx", "xls"]:
+                    df = pd.read_excel(uploaded_backup)
+                    records = df.to_dict(orient="records")
+                    save_table("staff", records)
+                    st.success("✅ એક્સેલ (Excel) ફાઇલમાંથી સ્ટાફ ડેટા સફળતાપૂર્વક રીસ્ટોર થઈ ગયો છે!")
+                elif file_extension == "csv":
+                    df = pd.read_csv(uploaded_backup)
+                    records = df.to_dict(orient="records")
+                    save_table("staff", records)
+                    st.success("✅ CSV ફાઇલમાંથી ડેટા સફળતાપૂર્વક રીસ્ટોર થઈ ગયો છે!")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ બેકઅપ ફાઇલ વાંચવામાં ભૂલ છે: {e}")
+                st.error(f"❌ ફાઇલ વાંચવામાં અથવા રીસ્ટોર કરવામાં ભૂલ છે: {e}")
 
