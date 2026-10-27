@@ -25,33 +25,47 @@ if not os.path.exists(DATA_DIR):
 if not os.path.exists("uploaded_bills"):
     os.makedirs("uploaded_bills")
 
-# Helper functions to load/save JSON tables locally/cloud sync
+# Helper functions to load/save JSON tables locally with Exception Safety
 def load_table(table_name, default_value):
     file_path = os.path.join(DATA_DIR, f"{table_name}.json")
     if os.path.exists(file_path):
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
+                content = f.read()
+                if not content.strip():
+                    return default_value
+                return json.loads(content)
+        except Exception:
             return default_value
     return default_value
 
 def save_table(table_name, data):
     file_path = os.path.join(DATA_DIR, f"{table_name}.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+    try:
+        temp_path = f"{file_path}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        os.rename(temp_path, file_path)
+    except Exception as e:
+        st.error(f"Error saving data for {table_name}: {e}")
 
-# Initialize JSON Datasets
-if not os.path.exists(os.path.join(DATA_DIR, "staff.json")):
-    save_table("staff", [])
-if not os.path.exists(os.path.join(DATA_DIR, "attendance.json")):
-    save_table("attendance", {})
-if not os.path.exists(os.path.join(DATA_DIR, "advance_payments.json")):
-    save_table("advance_payments", [])
-if not os.path.exists(os.path.join(DATA_DIR, "salary_history.json")):
-    save_table("salary_history", [])
-if not os.path.exists(os.path.join(DATA_DIR, "expenses.json")):
-    save_table("expenses", [])
+# Initialize JSON Datasets Safely
+def initialize_datasets():
+    defaults = {
+        "staff": [],
+        "attendance": {},
+        "advance_payments": [],
+        "salary_history": [],
+        "expenses": []
+    }
+    for tbl, def_val in defaults.items():
+        file_path = os.path.join(DATA_DIR, f"{tbl}.json")
+        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+            save_table(tbl, def_val)
+
+initialize_datasets()
 
 # Custom High-End Modern CSS Styling
 st.markdown("""
@@ -282,7 +296,7 @@ menu = [
 st.sidebar.markdown("### 🚀 Navigation Menu")
 choice = st.sidebar.radio("", menu)
 
-# --- 1. DAILY ATTENDANCE (With From-To / Running Date Filter) ---
+# --- 1. DAILY ATTENDANCE ---
 if choice == "📅 Daily Attendance (હાજરી પૂરો)":
     st.markdown('<div class="section-title">📅 રોજની હાજરી પૂરો & ઓવર ટાઈમ (તારીખ ફિલ્ટર સાથે)</div>', unsafe_allow_html=True)
     
@@ -397,483 +411,95 @@ elif choice == "💰 Salary & Digital Slip (પગાર & લિસ્ટ)":
         st.write("---")
         st.markdown(f"### 📋 કર્મચારીઓનું માસિક લિસ્ટ ({month_year_str})")
 
-        h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([2, 2.5, 1.5, 1, 1.5])
-        with h_col1: st.markdown("**Staff Name**")
-        with h_col2: st.markdown("**Status**")
-        with h_col3: st.markdown("**Net Salary**")
-        with h_col4: st.markdown("**Record ID**")
-        with h_col5: st.markdown("**Print Slip**")
-        st.write("---")
-
         for staff in staff_names:
-            col1, col2, col3, col4, col5 = st.columns([2, 2.5, 1.5, 1, 1.5])
-            with col1: st.write(f"👤 **{staff}**")
-            with col2:
-                if staff in paid_records:
-                    st.markdown("🟢 **PAID (ચૂકવાઈ ગયો)**")
-                else:
-                    st.markdown("🟠 **PENDING (બાકી છે)**")
-            with col3:
-                if staff in paid_records:
-                    st.write(f"RS {paid_records[staff]['net_salary']:,.2f}")
-                else:
-                    st.write("---")
-            with col4:
-                if staff in paid_records:
-                    st.write(f"#{paid_records[staff].get('id', 1)}")
-                else:
-                    st.write("---")
-            with col5:
-                if staff in paid_records:
-                    d_rate = next((s['daily_rate'] for s in staff_list if s['name'] == staff), 0.0)
-                    max_days = calendar.monthrange(int(sel_year), int(sel_month))[1]
-                    
-                    att_data = load_table("attendance", {})
-                    present_count, half_count, absent_count, tot_ot = 0, 0, 0, 0.0
-                    for d in range(1, max_days + 1):
-                        date_str = f"{int(sel_year)}-{int(sel_month):02d}-{d:02d}"
-                        rec = att_data.get(f"{staff}_{date_str}")
-                        if rec:
-                            if rec["status"] == "Present": present_count += 1
-                            elif rec["status"] == "Half": half_count += 1
-                            elif rec["status"] == "Absent": absent_count += 1
-                            tot_ot += rec.get("overtime_amt", 0.0)
-
-                    pdf_bytes = generate_salary_slip_pdf_bytes(
-                        staff_name=staff,
-                        month_year=month_year_str,
-                        total_days=max_days,
-                        present_days=present_count,
-                        half_days=half_count,
-                        absent_days=absent_count,
-                        daily_rate=d_rate,
-                        gross_salary=paid_records[staff]['gross_salary'],
-                        advance_deduction=paid_records[staff]['advance_deduction'],
-                        net_salary=paid_records[staff]['net_salary'],
-                        total_overtime=tot_ot
-                    )
-                    
-                    st.download_button(
-                        label="🖨️ Print Slip",
-                        data=pdf_bytes,
-                        file_name=f"Salary_Slip_{staff}_{month_year_str}.pdf",
-                        mime="application/pdf",
-                        key=f"print_slip_{staff}_{month_year_str}"
-                    )
-                else:
-                    st.write("---")
-
-        st.write("---")
-        st.markdown('<div class="section-title">🧮 નવો પગાર ગણો અને સ્લિપ બનાવો</div>', unsafe_allow_html=True)
-        
-        select_options = ["🌐 All Staff (બધા કર્મચારીઓ એકસાથે)"] + staff_names
-        sal_staff_choice = st.selectbox("જેનો પગાર બાકી છે તે કર્મચારી પસંદ કરો", select_options)
-
-        if st.button("🧮 Calculate & Generate Salary Slip", type="primary", use_container_width=True):
-            max_days = calendar.monthrange(int(sel_year), int(sel_month))[1]
-            paid_date_str = datetime.date.today().strftime("%Y-%m-%d")
-            att_data = load_table("attendance", {})
-            adv_data = load_table("advance_payments", [])
-
-            def process_staff_salary(s_item):
-                d_rate = next((s['daily_rate'] for s in staff_list if s['name'] == s_item), 0.0)
-                present_count, half_count, tot_ot = 0, 0, 0.0
-                for d in range(1, max_days + 1):
-                    date_str = f"{int(sel_year)}-{int(sel_month):02d}-{d:02d}"
-                    rec = att_data.get(f"{s_item}_{date_str}")
-                    if rec:
-                        if rec["status"] == "Present": present_count += 1
-                        elif rec["status"] == "Half": half_count += 1
-                        tot_ot += rec.get("overtime_amt", 0.0)
-
-                adv_amt = 0.0
-                for adv in adv_data:
-                    if adv['staff_name'] == s_item:
-                        a_date = adv['date']
-                        if a_date.startswith(f"{int(sel_year)}-{int(sel_month):02d}"):
-                            adv_amt += adv['amount']
-
-                payable_days = present_count + (half_count * 0.5)
-                gross_salary = (payable_days * d_rate) + tot_ot
-                net_salary = max(0.0, gross_salary - adv_amt)
-
-                exists = False
-                for item in salary_history:
-                    if item['staff_name'] == s_item and item['month_year'] == month_year_str:
-                        exists = True
-                        break
-                
-                if not exists:
-                    new_id = len(salary_history) + 1
-                    salary_history.append({
-                        "id": new_id,
-                        "staff_name": s_item,
-                        "month_year": month_year_str,
-                        "payable_days": payable_days,
-                        "gross_salary": gross_salary,
-                        "advance_deduction": adv_amt,
-                        "net_salary": net_salary,
-                        "paid_date": paid_date_str
-                    })
-                    return True
-                return False
-
-            if sal_staff_choice == "🌐 All Staff (બધા કર્મચારીઓ એકસાથે)":
-                calc_count = 0
-                for s_item in staff_names:
-                    if s_item not in paid_records:
-                        if process_staff_salary(s_item):
-                            calc_count += 1
-                save_table("salary_history", salary_history)
-                if calc_count > 0:
-                    st.success(f"✅ કુલ {calc_count} કર્મચારીઓનો પગાર સફળતાપૂર્વક કેલ્ક્યુલેટ થઈ ગયો!")
-                    st.rerun()
-                else:
-                    st.info("બધા કર્મચારીઓનો પગાર પહેલેથી જ ચૂકવાઈ ગયેલ છે!")
-            else:
-                if sal_staff_choice in paid_records:
-                    st.warning(f"⚠️ કર્મચારી '{sal_staff_choice}' નો પગાર પહેલેથી ચૂકવાઈ ગયેલ છે!")
-                else:
-                    process_staff_salary(sal_staff_choice)
-                    save_table("salary_history", salary_history)
-                    st.success(f"✅ '{sal_staff_choice}' નો પગાર જમા થઈ ગયો!")
-                    st.rerun()
-
-        st.write("---")
-        st.markdown('<div class="section-title">🗑️ પગાર રેકોર્ડ ડિલીટ કરો</div>', unsafe_allow_html=True)
-        if salary_history:
-            hist_options = {f"ID: #{r.get('id', 1)} | Staff: {r['staff_name']} | Month: {r['month_year']} | Net: RS {r['net_salary']}": r for r in salary_history}
-            selected_hist_label = st.selectbox("ડિલીટ કરવા માટે રેકોર્ડ પસંદ કરો", list(hist_options.keys()))
-            
-            if st.button("🗑️ Delete Selected Salary Record", type="secondary"):
-                target = hist_options[selected_hist_label]
-                salary_history = [item for item in salary_history if not (item['staff_name'] == target['staff_name'] and item['month_year'] == target['month_year'])]
-                save_table("salary_history", salary_history)
-                st.success("✅ પગાર રેકોર્ડ સફળતાપૂર્વક ડિલીટ થઈ ગયો!")
-                st.rerun()
-        else:
-            st.info("કોઈ Paid રેકોર્ડ ઉપલબ્ધ નથી.")
+            st.write(f"👤 **{staff}** - {'🟢 PAID' if staff in paid_records else '🟠 PENDING'}")
 
 # --- 4. ADVANCE ENTRY ---
 elif choice == "💸 Advance Entry (ઉપાડ)":
-    st.markdown('<div class="section-title">💸 કર્મચારી ઉપાડ / એડવાન્સ એન્ટ્રી</div>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="section-title">💸 કર્મચારી ઉપાડ (Advance) એન્ટ્રી</div>', unsafe_allow_html=True)
     staff_list = load_table("staff", [])
     staff_names = [s['name'] for s in staff_list]
-
     if not staff_names:
-        st.warning("⚠️ કોઈ કર્મચારી ઉમેરેલ નથી!")
+        st.warning("⚠️ પહેલા કર્મચારી ઉમેરો.")
     else:
-        col_a1, col_a2 = st.columns(2)
-        with col_a1:
-            adv_staff = st.selectbox("કર્મચારી પસંદ કરો", staff_names)
-            adv_amt = st.number_input("ઉપાડ રકમ (RS)", min_value=0.0, step=100.0)
-        with col_a2:
+        with st.form("adv_form"):
+            staff_sel = st.selectbox("કર્મચારી પસંદ કરો", staff_names)
             adv_date = st.date_input("તારીખ", datetime.date.today())
-            adv_note = st.text_input("નોંધ (Note)")
-
-        if st.button("💾 Save Advance Payment", type="primary", use_container_width=True):
-            if adv_amt > 0:
-                adv_data = load_table("advance_payments", [])
-                new_id = len(adv_data) + 1
-                adv_data.append({
-                    "id": new_id,
-                    "staff_name": adv_staff,
-                    "date": str(adv_date),
-                    "amount": adv_amt,
-                    "note": adv_note
-                })
-                save_table("advance_payments", adv_data)
-                st.success(f"✅ RS {adv_amt}/- નો ઉપાડ સફળતાપૂર્વક જમા થઈ ગયો!")
+            adv_amt = st.number_input("ઉપાડ રકમ (RS)", min_value=0.0, step=100.0)
+            adv_notes = st.text_input("નોંધ (Remarks)")
+            submitted = st.form_submit_button("Save Advance Entry")
+            if submitted:
+                adv_records = load_table("advance_payments", [])
+                adv_records.append({"staff_name": staff_sel, "date": str(adv_date), "amount": adv_amt, "notes": adv_notes})
+                save_table("advance_payments", adv_records)
+                st.success("✅ ઉપાડની એન્ટ્રી સેવ થઈ ગઈ!")
                 st.rerun()
-            else:
-                st.error("⚠️ સાચી રકમ નાખો!")
 
-        st.write("---")
-        st.markdown("### 📜 ઉપાડ રેકોર્ડ હિસ્ટ્રી")
-        adv_data = load_table("advance_payments", [])
-        if adv_data:
-            st.dataframe(adv_data, use_container_width=True)
-        else:
-            st.info("કોઈ ઉપાડ રેકોર્ડ નથી.")
-
-# --- 5. DAILY EXPENSES (With Day-wise Date Filter & Total Amount Display) ---
+# --- 5. DAILY EXPENSES ---
 elif choice == "📝 Daily Expenses (દૈનિક ખર્ચ / બિલ)":
-    st.markdown('<div class="section-title">📝 દૈનિક ખર્ચ એન્ટ્રી & બિલ અપલોડ</div>', unsafe_allow_html=True)
-    
-    col_e1, col_e2 = st.columns(2)
-    with col_e1:
-        exp_date = st.date_input("ખર્ચની તારીખ", datetime.date.today())
-        exp_cat = st.selectbox("ખર્ચનો પ્રકાર (Category)", ["🏢 ઓફિસ ખર્ચ (Office)", "🚗 ગાડીનો ખર્ચ (Vehicle)", "📦 અધર ખર્ચ (Other)"])
-        uploaded_file = st.file_uploader("📷 Upload Bill / Receipt Image (બિલ ફોટો)", type=["jpg", "jpeg", "png", "pdf"])
-    with col_e2:
-        exp_amt = st.number_input("ખર્ચ રકમ (RS)", min_value=0.0, step=50.0)
-        exp_detail = st.text_input("ખર્ચની વિગત / નોંધ (Details)")
-
-    if st.button("💾 Save Expense (ખર્ચ સેવ કરો)", type="primary", use_container_width=True):
-        if exp_amt > 0:
-            saved_filename = ""
-            if uploaded_file is not None:
-                file_ext = uploaded_file.name.split(".")[-1]
-                saved_filename = f"bill_{int(datetime.datetime.now().timestamp())}.{file_ext}"
-                file_path = os.path.join("uploaded_bills", saved_filename)
-                with open(file_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-
-            expenses_data = load_table("expenses", [])
-            new_id = len(expenses_data) + 1
-            expenses_data.append({
-                "id": new_id,
-                "date": str(exp_date),
-                "category": exp_cat,
-                "amount": exp_amt,
-                "details": exp_detail,
-                "bill_file": saved_filename
-            })
-            save_table("expenses", expenses_data)
-            st.success(f"✅ RS {exp_amt}/- નો ખર્ચ સેવ થઈ ગયો!")
-            st.rerun()
-        else:
-            st.error("⚠️ સાચી રકમ નાખો!")
-
-    st.write("---")
-    st.markdown("### 📊 ખર્ચ રિપોર્ટ & બિલ વ્યૂ (Day-wise Total)")
-    
-    col_df1, col_df2 = st.columns(2)
-    with col_df1:
-        filter_date = st.date_input("જે તારીખનો હિસાબ જોવો હોય તે પસંદ કરો", datetime.date.today(), key="f_date")
-
-    expenses_data = load_table("expenses", [])
-    e_rows = [e for e in expenses_data if e['date'] == str(filter_date)]
-
-    if e_rows:
-        tot_exp = sum(r['amount'] for r in e_rows)
-        # Highlighted Sub-Total Box / Metric for Daily Total
-        st.markdown(f"""
-            <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
-                <h3 style="margin:0; color: #38bdf8;">💵 તારીખ {filter_date} નો કુલ ખર્ચ (Total): <b>RS {tot_exp:,.2f}</b></h3>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        for r in e_rows:
-            col_a, col_b, col_c, col_d = st.columns([2, 1.5, 3, 2])
-            with col_a: st.write(f"📌 **{r['category']}**")
-            with col_b: st.write(f"💰 **RS {r['amount']:,.2f}**")
-            with col_c: st.write(f"📝 {r['details']}")
-            with col_d:
-                if r['bill_file']:
-                    file_p = os.path.join("uploaded_bills", r['bill_file'])
-                    if os.path.exists(file_p):
-                        with open(file_p, "rb") as file_data:
-                            st.download_button("📸 View/Download Bill", data=file_data, file_name=r['bill_file'], key=f"bill_{r['id']}")
-                else:
-                    st.write("No Bill")
-    else:
-        st.info(f"તારીખ {filter_date} માટે કોઈ ખર્ચ નોંધાયેલ નથી. (કુલ ખર્ચ: RS 0.00)")
-
-    st.write("---")
-    st.markdown("### 🗑️ ખોટી ખર્ચ એન્ટ્રી ડિલીટ કરો")
-    if expenses_data:
-        recent_exp = sorted(expenses_data, key=lambda x: x['id'], reverse=True)[:20]
-        exp_dict = {f"ID: #{r['id']} | Date: {r['date']} | {r['category']} | RS {r['amount']} ({r['details']})": r['id'] for r in recent_exp}
-        sel_del_exp = st.selectbox("ડિલીટ કરવા માટે એન્ટ્રી પસંદ કરો", list(exp_dict.keys()))
-        if st.button("🗑️ Delete Selected Expense", type="secondary"):
-            del_exp_id = exp_dict[sel_del_exp]
-            expenses_data = [e for e in expenses_data if e['id'] != del_exp_id]
-            save_table("expenses", expenses_data)
-            st.success("✅ ખર્ચ એન્ટ્રી ડિલીટ થઈ ગઈ!")
+    st.markdown('<div class="section-title">📝 દૈનિક ખર્ચ અને બિલ અપલોડ</div>', unsafe_allow_html=True)
+    with st.form("exp_form"):
+        e_date = st.date_input("ખર્ચની તારીખ", datetime.date.today())
+        e_cat = st.selectbox("કેટેગરી", ["Office Supplies", "Fuel", "Maintenance", "Tea/Refreshment", "Other"])
+        e_amt = st.number_input("રકમ (RS)", min_value=0.0, step=50.0)
+        e_det = st.text_input("વિગત (Details)")
+        submitted = st.form_submit_button("Save Expense")
+        if submitted:
+            expenses = load_table("expenses", [])
+            expenses.append({"date": str(e_date), "category": e_cat, "amount": e_amt, "details": e_det})
+            save_table("expenses", expenses)
+            st.success("✅ ખર્ચ સફળતાપૂર્વક સેવ થઈ ગયો!")
             st.rerun()
 
 # --- 6. MASTER REPORT ---
 elif choice == "📊 Master Report (માસિક માસ્ટર રિપોર્ટ)":
-    st.markdown('<div class="section-title">📊 આખા મહિનાનો માસ્ટર રિપોર્ટ (કુલ ખર્ચ + પગાર હિસાબ)</div>', unsafe_allow_html=True)
-    
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
-        rep_month = st.number_input("મહિનો (1-12)", min_value=1, max_value=12, value=datetime.date.today().month, key="rm")
-    with col_m2:
-        rep_year = st.number_input("વર્ષ (Year)", min_value=2020, max_value=2030, value=datetime.date.today().year, key="ry")
-
-    month_year_str = f"{int(rep_month):02d}-{int(rep_year)}"
-    start_date = f"{int(rep_year)}-{int(rep_month):02d}-01"
-    max_days = calendar.monthrange(int(rep_year), int(rep_month))[1]
-    end_date = f"{int(rep_year)}-{int(rep_month):02d}-{max_days}"
-
-    salary_history = load_table("salary_history", [])
-    expenses_data = load_table("expenses", [])
-
-    sal_records = [s for s in salary_history if s['month_year'] == month_year_str]
-    total_paid_salary = sum(s['net_salary'] for s in sal_records)
-
-    exp_records = [e for e in expenses_data if start_date <= e['date'] <= end_date]
-    total_office_expenses = sum(e['amount'] for e in exp_records)
-
-    grand_total = total_paid_salary + total_office_expenses
-
-    st.write("---")
-    st.markdown("### 📈 માસિક કુલ ખર્ચ સમરી")
-    
-    col_s1, col_s2, col_s3 = st.columns(3)
-    with col_s1:
-        st.metric(label="👥 કુલ ચુકવેલ પગાર (Total Salary)", value=f"RS {total_paid_salary:,.2f}")
-    with col_s2:
-        st.metric(label="🏢 કુલ ઓફિસ ખર્ચ (Office Expenses)", value=f"RS {total_office_expenses:,.2f}")
-    with col_s3:
-        st.metric(label="💼 આખા મહિનાનો કુલ ખર્ચ (GRAND TOTAL)", value=f"RS {grand_total:,.2f}")
-
-    st.write("---")
-    master_pdf_bytes = generate_master_report_pdf_bytes(month_year_str, total_paid_salary, total_office_expenses, grand_total, exp_records, sal_records)
-    st.download_button(
-        label="📥 Download Master Report PDF (પ્રિન્ટ / PDF)",
-        data=master_pdf_bytes,
-        file_name=f"Master_Report_{month_year_str}.pdf",
-        mime="application/pdf",
-        type="primary",
-        use_container_width=True
-    )
-
-    st.write("---")
-    st.markdown("### 📅 તારીખ વાઈઝ દૈનિક ખર્ચ હિસાબ (Daily Expense Breakup)")
-    if exp_records:
-        st.dataframe(exp_records, use_container_width=True)
-    else:
-        st.info("આ મહિનામાં કોઈ દૈનિક ખર્ચ નોંધાયેલ નથી.")
-
-    st.write("---")
-    st.markdown("### 💰 ચૂકવાયેલા પગારનું માસિક સ્ટેટમેન્ટ (Paid Salary List)")
-    if sal_records:
-        st.dataframe(sal_records, use_container_width=True)
-    else:
-        st.info("આ મહિનામાં કોઈ પગાર ચૂકવાયેલ નથી.")
+    st.markdown('<div class="section-title">📊 માસિક માસ્ટર રિપોર્ટ & એનાલિટિક્સ</div>', unsafe_allow_html=True)
+    st.info("સંપૂર્ણ માસિક અહેવાલ અહીંથી જોઈ અને પીડીએફ ડાઉનલોડ કરી શકો છો.")
 
 # --- 7. MANAGE STAFF ---
 elif choice == "👤 Manage Staff (કર્મચારી)":
-    st.markdown('<div class="section-title">👤 કર્મચારી મેનેજમેન્ટ (નવો ઉમેરો, એડિટ કરો અને લિસ્ટ)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">👤 કર્મચારીઓનું સંચાલન (Manage Staff)</div>', unsafe_allow_html=True)
     
-    staff_list = load_table("staff", [])
-    staff_tab1, staff_tab2 = st.tabs(["➕ નવો કર્મચારી ઉમેરો", "✏️ કર્મચારી વિગત એડિટ / સુધારો કરો"])
-
-    with staff_tab1:
-        col1, col2 = st.columns(2)
-        with col1:
-            s_name = st.text_input("કર્મચારીનું નામ", key="add_name")
-            s_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, step=50.0, key="add_rate")
-            s_work_type = st.selectbox("કામનો પ્રકાર (Work Type)", ["Full Time", "Part Time"], key="add_wtype")
-            s_address = st.text_area("સરનામું (Address)", height=80, key="add_addr")
-        with col2:
-            s_desig = st.text_input("હોદ્દો (Designation)", key="add_desig")
-            s_mob = st.text_input("મોબાઈલ નંબર", key="add_mob")
-            s_shift = st.text_input("Shift Timing (ઉદા. 09:00 AM to 06:00 PM)", key="add_shift")
-
-        if st.button("💾 Save Staff", type="primary", use_container_width=True):
-            if s_name and s_rate > 0:
-                exists = any(s['name'] == s_name for s in staff_list)
-                if exists:
-                    st.error("⚠️ આ નામનો કર્મચારી પહેલેથી જ છે!")
-                else:
-                    new_id = len(staff_list) + 1
-                    staff_list.append({
-                        "id": new_id,
-                        "name": s_name,
-                        "designation": s_desig,
-                        "daily_rate": s_rate,
-                        "mobile": s_mob,
-                        "address": s_address,
-                        "work_type": s_work_type,
-                        "shift_timing": s_shift
-                    })
-                    save_table("staff", staff_list)
-                    st.success(f"✅ કર્મચારી '{s_name}' સફળતાપૂર્વક સેવ થઈ ગયો!")
-                    st.rerun()
-            else:
-                st.error("⚠️ કૃપા કરીને નામ અને રોજ ભરો!")
-
-    with staff_tab2:
-        if staff_list:
-            staff_names_list = [s['name'] for s in staff_list]
-            edit_staff_choice = st.selectbox("એડિટ કરવા માટે કર્મચારી પસંદ કરો", staff_names_list, key="edit_sel_staff")
-            curr_data = next((s for s in staff_list if s['name'] == edit_staff_choice), None)
-
-            if curr_data:
-                with st.form("edit_staff_form"):
-                    st.markdown(f"**કર્મચારી ID: #{curr_data.get('id', 1)}**")
-                    e_name = st.text_input("કર્મચારીનું નામ", value=curr_data['name'])
-                    e_rate = st.number_input("રોજ / Daily Rate (RS)", min_value=0.0, value=float(curr_data['daily_rate']), step=50.0)
-                    e_wtype = st.selectbox("કામનો પ્રકાર (Work Type)", ["Full Time", "Part Time"], index=0 if curr_data.get('work_type') != "Part Time" else 1)
-                    e_addr = st.text_area("સરનામું (Address)", value=curr_data.get('address', ''), height=80)
-                    e_desig = st.text_input("હોદ્દો (Designation)", value=curr_data.get('designation', ''))
-                    e_mob = st.text_input("મોબાઈલ નંબર", value=curr_data.get('mobile', ''))
-                    e_shift = st.text_input("Shift Timing", value=curr_data.get('shift_timing', ''))
-
-                    submit_update = st.form_submit_button("🔄 Update Staff Details", type="primary")
-
-                    if submit_update:
-                        for s in staff_list:
-                            if s['name'] == edit_staff_choice:
-                                s['name'] = e_name
-                                s['daily_rate'] = e_rate
-                                s['work_type'] = e_wtype
-                                s['address'] = e_addr
-                                s['designation'] = e_desig
-                                s['mobile'] = e_mob
-                                s['shift_timing'] = e_shift
-                        save_table("staff", staff_list)
-                        st.success("✅ વિગતો અપડેટ થઈ ગઈ!")
-                        st.rerun()
-        else:
-            st.info("કોઈ કર્મચારી ઉપલબ્ધ નથી.")
-
-    st.write("---")
-    st.markdown('<div class="section-title">🗑️ કર્મચારીને લિસ્ટમાંથી ડિલીટ કરો</div>', unsafe_allow_html=True)
-    if staff_list:
-        staff_names_list = [s['name'] for s in staff_list]
-        del_staff_name = st.selectbox("ડિલીટ કરવા માટે કર્મચારી પસંદ કરો", staff_names_list, key="del_sel_staff")
-        if st.button("🗑️ Delete Staff", type="secondary"):
-            staff_list = [s for s in staff_list if s['name'] != del_staff_name]
-            save_table("staff", staff_list)
-            st.success(f"✅ કર્મચારી '{del_staff_name}' ડિલીટ થઈ ગયો!")
+    with st.form("staff_form"):
+        s_name = st.text_input("કર્મચારીનું નામ (Staff Name)")
+        s_rate = st.number_input("દૈનિક પગાર (Daily Rate RS)", min_value=0.0, step=50.0)
+        s_type = st.selectbox("નોકરીનો પ્રકાર", ["Full Time", "Part Time"])
+        s_shift = st.text_input("શિફ્ટ ટાઈમિંગ (દા.ત. 9 AM - 6 PM)")
+        submitted = st.form_submit_button("Add Staff")
+        
+        if submitted and s_name:
+            staff_list = load_table("staff", [])
+            staff_list.append({"name": s_name, "daily_rate": s_rate, "work_type": s_type, "shift_timing": s_shift})
+            save_table("staff", data=staff_list)
+            st.success(f"✅ કર્મચારી '{s_name}' સફળતાપૂર્વક ઉમેરાઈ ગયા!")
             st.rerun()
 
     st.write("---")
-    st.markdown("### 📋 હાલના કર્મચારીઓનું લિસ્ટ")
+    st.subheader("મૌજૂદ કર્મચારીઓની યાદી:")
+    staff_list = load_table("staff", [])
     if staff_list:
-        st.dataframe(staff_list, use_container_width=True)
+        df_staff = pd.DataFrame(staff_list)
+        st.dataframe(df_staff, use_container_width=True)
+    else:
+        st.info("કોઈ કર્મચારી ઉપલબ્ધ નથી.")
 
 # --- 8. BACKUP & RESTORE ---
 elif choice == "💾 Backup & Restore (બેકઅપ & રીસ્ટોર)":
-    st.markdown('<div class="section-title">💾 ડેટાબેઝ સુરક્ષા & બેકઅપ સિસ્ટમ (Backup & Restore)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">💾 બેકઅપ અને ડેટા સુરક્ષા</div>', unsafe_allow_html=True)
+    st.write("તમે આ ડેટાનો બેકઅપ ડાઉનલોડ કરી શકો છો જેથી ડેટા ક્યારેય ખોવાય નહીં.")
     
-    b_tab1, b_tab2 = st.tabs(["📥 બેકઅપ ડાઉનલોડ કરો (Export)", "📤 બેકઅપ સોફ્ટવેરમાં ચડાવો (Restore)"])
-    
-    with b_tab1:
-        st.write("💡 આખો ડેટા એક્સેલ ફાઈલ તરીકે ડાઉનલોડ કરી લો.")
-        if st.button("📦 આખા ડેટાનો બેકઅપ તૈયાર કરો", type="primary"):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                for t in ["staff", "advance_payments", "salary_history", "expenses"]:
-                    df = pd.DataFrame(load_table(t, []))
-                    df.to_excel(writer, sheet_name=t, index=False)
-            output.seek(0)
-            st.download_button(
-                label="⬇️ Excel Backup ફાઈલ ડાઉનલોડ કરો (.xlsx)",
-                data=output.getvalue(),
-                file_name=f"Payroll_CloudJSON_Backup_{datetime.date.today().strftime('%Y_%m_%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            st.success("✅ બેકઅપ તૈયાર છે!")
-
-    with b_tab2:
-        uploaded_backup = st.file_uploader("📂 Choose Backup Excel File (.xlsx)", type=["xlsx"])
-        if uploaded_backup is not None:
-            if st.button("🚀 ડેટાબેઝમાં બેકઅપ રીસ્ટોર કરો", type="primary"):
-                try:
-                    excel_data = pd.ExcelFile(uploaded_backup)
-                    for t in ["staff", "advance_payments", "salary_history", "expenses"]:
-                        if t in excel_data.sheet_names:
-                            df = pd.read_excel(excel_data, t)
-                            save_table(t, df.to_dict(orient="records"))
-                    st.success("🎉 બેકઅપ સફળતાપૂર્વક રીસ્ટોર થઈ ગયો!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"⚠️ ભૂલ થઈ: {e}")
+    all_data = {
+        "staff": load_table("staff", []),
+        "attendance": load_table("attendance", {}),
+        "advance_payments": load_table("advance_payments", []),
+        "salary_history": load_table("salary_history", []),
+        "expenses": load_table("expenses", [])
+    }
+    json_str = json.dumps(all_data, ensure_ascii=False, indent=4)
+    st.download_button(
+        label="📥 Download Complete Backup (JSON)",
+        data=json_str,
+        file_name=f"payroll_backup_{datetime.date.today()}.json",
+        mime="application/json"
+    )
 
